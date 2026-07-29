@@ -3,4 +3,5 @@ out/
 dist/
 *.vsix
 .omc/
+docs/superpowers/
 .DS_Store
