@@ -24,6 +24,10 @@
       {
         "command": "ptal.refresh",
         "title": "PTAL: Refresh Review Comments"
+      },
+      {
+        "command": "ptal.nextUnresolved",
+        "title": "PTAL: Go to Next Unresolved Comment"
       }
     ]
   },

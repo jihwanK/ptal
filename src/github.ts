@@ -9,6 +9,7 @@ const exec = promisify(execFile);
 export interface ReviewComment {
   id: string;
   author: string;
+  authorAvatar?: string;
   body: string;
   url: string;
   /** Review-time diff hunk text: fallback content matching + frozen-context display. */
@@ -35,6 +36,12 @@ export interface ReviewSet {
   url: string;
   headSha: string;
   threads: ReviewThread[];
+}
+
+/** Git repository root — file paths in review threads are relative to this. */
+export async function repoRoot(cwd: string): Promise<string> {
+  const { stdout } = await exec('git', ['rev-parse', '--show-toplevel'], { cwd });
+  return stdout.trim();
 }
 
 export async function detectRepo(cwd: string): Promise<{ owner: string; repo: string; branch: string }> {
@@ -72,7 +79,7 @@ query($owner: String!, $repo: String!, $branch: String!, $cursor: String) {
                 url
                 createdAt
                 diffHunk
-                author { login }
+                author { login avatarUrl }
                 originalCommit { oid }
               }
             }
@@ -107,6 +114,7 @@ function toThread(node: any): ReviewThread {
   const comments: ReviewComment[] = (node.comments?.nodes ?? []).map((c: any) => ({
     id: c.id,
     author: c.author?.login ?? 'unknown',
+    authorAvatar: c.author?.avatarUrl,
     body: c.body ?? '',
     url: c.url,
     snippet: c.diffHunk ?? '',
