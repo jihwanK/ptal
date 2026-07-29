@@ -38,6 +38,7 @@ export function activate(context: vscode.ExtensionContext) {
             path: thread.path,
             anchorSha: thread.anchorSha,
             anchorLine: thread.anchorLine,
+            anchorStartLine: thread.anchorStartLine,
             snippet: thread.comments[0]?.snippet ?? '',
           }),
         })),

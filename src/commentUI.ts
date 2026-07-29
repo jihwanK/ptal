@@ -23,8 +23,26 @@ export class CommentUI implements vscode.Disposable {
   private targets: { uri: vscode.Uri; line: number; path: string }[] = [];
   private cursor = -1;
 
+  // Subtle, theme-aware highlight on lines with unresolved threads.
+  // Theme color variables keep it readable in both light and dark themes.
+  private highlight = vscode.window.createTextEditorDecorationType({
+    backgroundColor: new vscode.ThemeColor('editor.rangeHighlightBackground'),
+    isWholeLine: true,
+    overviewRulerColor: new vscode.ThemeColor('editorOverviewRuler.commentUnresolvedForeground'),
+    overviewRulerLane: vscode.OverviewRulerLane.Right,
+  });
+  private highlightRanges = new Map<string, vscode.Range[]>();
+  private editorListener: vscode.Disposable;
+
   constructor() {
     this.controller.options = { placeHolder: 'Reply — posted to the review thread on GitHub', prompt: '' };
+    this.editorListener = vscode.window.onDidChangeVisibleTextEditors(() => this.applyHighlights());
+  }
+
+  private applyHighlights(): void {
+    for (const editor of vscode.window.visibleTextEditors) {
+      editor.setDecorations(this.highlight, this.highlightRanges.get(editor.document.uri.toString()) ?? []);
+    }
   }
 
   /** Neutral thread data behind a rendered VS Code thread (for reply/resolve commands). */
@@ -38,7 +56,9 @@ export class CommentUI implements vscode.Disposable {
     for (const { thread, anchor } of mapped) {
       const uri = vscode.Uri.file(join(root, thread.path));
       const line = anchor.line ?? 1; // lost → anchor at top of file, flagged by label
-      const range = new vscode.Range(line - 1, 0, line - 1, 0);
+      // multi-line review ranges span startLine..line; single-line comments collapse to one line
+      const start = anchor.line !== null && anchor.startLine !== undefined ? anchor.startLine : line;
+      const range = new vscode.Range(start - 1, 0, line - 1, 0);
 
       const comments: vscode.Comment[] = [];
       if (anchor.confidence !== 'exact' && thread.comments[0]?.snippet) {
@@ -100,12 +120,19 @@ export class CommentUI implements vscode.Disposable {
 
       this.rendered.push(t);
       if (!thread.isResolved) {
-        this.targets.push({ uri, line, path: thread.path });
+        this.targets.push({ uri, line: start, path: thread.path });
+        if (anchor.line !== null) {
+          const key = uri.toString();
+          const ranges = this.highlightRanges.get(key) ?? [];
+          ranges.push(range);
+          this.highlightRanges.set(key, ranges);
+        }
       }
     }
 
     this.targets.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line);
     this.cursor = -1;
+    this.applyHighlights();
   }
 
   async nextUnresolved(): Promise<void> {
@@ -128,10 +155,14 @@ export class CommentUI implements vscode.Disposable {
     this.meta.clear();
     this.targets = [];
     this.cursor = -1;
+    this.highlightRanges.clear();
+    this.applyHighlights();
   }
 
   dispose(): void {
     this.clear();
+    this.highlight.dispose();
+    this.editorListener.dispose();
     this.controller.dispose();
   }
 }

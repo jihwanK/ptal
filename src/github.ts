@@ -24,6 +24,8 @@ export interface ReviewThread {
   anchorSha: string;
   /** 1-based line in the anchor commit's version of the file; null if the platform lost it. */
   anchorLine: number | null;
+  /** First line of a multi-line comment range; null for single-line comments. */
+  anchorStartLine: number | null;
   isOutdated: boolean;
   isResolved: boolean;
   comments: ReviewComment[];
@@ -80,6 +82,8 @@ query($owner: String!, $repo: String!, $branch: String!, $cursor: String) {
             path
             line
             originalLine
+            startLine
+            originalStartLine
             diffSide
             isResolved
             isOutdated
@@ -185,6 +189,7 @@ function toThread(node: any): ReviewThread {
     path: node.path,
     anchorSha: '', // filled by caller: needs headRefOid for the non-outdated case
     anchorLine: leftSide ? null : node.isOutdated ? node.originalLine : node.line,
+    anchorStartLine: leftSide ? null : node.isOutdated ? node.originalStartLine : node.startLine,
     isOutdated: node.isOutdated,
     isResolved: node.isResolved,
     comments,

@@ -132,7 +132,7 @@ export function matchSnippet(fileText: string, diffHunk: string): number | null 
 }
 
 export type MappedAnchor =
-  | { line: number; confidence: 'exact' | 'approx' | 'content' }
+  | { line: number; startLine?: number; confidence: 'exact' | 'approx' | 'content' }
   | { line: null; confidence: 'lost'; reason: 'anchor-missing' | 'content-changed' };
 
 /** Full fallback chain for one thread anchor. */
@@ -141,6 +141,7 @@ export async function mapAnchor(opts: {
   path: string;
   anchorSha: string;
   anchorLine: number | null;
+  anchorStartLine?: number | null;
   snippet: string;
 }): Promise<MappedAnchor> {
   let anchorMissing = false;
@@ -155,7 +156,15 @@ export async function mapAnchor(opts: {
       );
       const res = mapLine(stdout, opts.anchorLine);
       if (res !== null) {
-        return { line: Math.max(1, res.line), confidence: res.exact ? 'exact' : 'approx' };
+        const line = Math.max(1, res.line);
+        // multi-line range: map the start through the same diff; drop it if it
+        // fails or inverts rather than showing a wrong-looking span
+        let startLine: number | undefined;
+        if (opts.anchorStartLine != null && opts.anchorStartLine < opts.anchorLine) {
+          const s = mapLine(stdout, opts.anchorStartLine);
+          if (s !== null && s.line >= 1 && s.line <= line) startLine = s.line;
+        }
+        return { line, startLine, confidence: res.exact ? 'exact' : 'approx' };
       }
     } catch {
       // anchor commit missing locally (behind the PR, rebase/force-push, shallow clone)
