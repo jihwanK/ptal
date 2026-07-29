@@ -46,6 +46,12 @@ export async function repoRoot(cwd: string): Promise<string> {
   return stdout.trim();
 }
 
+/** Absolute git dir — worktree-safe home of HEAD, for branch-switch watching. */
+export async function gitDir(cwd: string): Promise<string> {
+  const { stdout } = await exec('git', ['rev-parse', '--absolute-git-dir'], { cwd });
+  return stdout.trim();
+}
+
 /** True when `sha` is part of local history (i.e. the checkout is not behind it). */
 export async function localContains(cwd: string, sha: string): Promise<boolean> {
   try {

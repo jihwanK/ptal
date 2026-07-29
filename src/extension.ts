@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { fetchReviewSet, localContains, repoRoot, replyToThread, resolveThread, unresolveThread, viewer } from './github';
+import { fetchReviewSet, gitDir, localContains, repoRoot, replyToThread, resolveThread, unresolveThread, viewer } from './github';
 import { mapAnchor } from './lineMapper';
 import { CommentUI, MappedThread } from './commentUI';
 
@@ -145,6 +145,30 @@ export function activate(context: vscode.ExtensionContext) {
       }
     }),
   );
+
+  // branch-switch detection: watch HEAD in the actual git dir (worktree-safe)
+  void (async () => {
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (!folder) {
+      return;
+    }
+    try {
+      const dir = await gitDir(folder.uri.fsPath);
+      const watcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(vscode.Uri.file(dir), 'HEAD'),
+      );
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const schedule = () => {
+        clearTimeout(timer);
+        timer = setTimeout(() => void refresh(), 500); // HEAD writes come in bursts
+      };
+      watcher.onDidChange(schedule);
+      watcher.onDidCreate(schedule);
+      context.subscriptions.push(watcher);
+    } catch {
+      // not a git repo — nothing to watch
+    }
+  })();
 
   void refresh();
 }
