@@ -44,11 +44,19 @@ export function parseHunks(diffText: string): Hunk[] {
   return hunks;
 }
 
+export interface LineMatch {
+  line: number;
+  /** false when the original line was deleted/rewritten — `line` is where its replacement lives. */
+  exact: boolean;
+}
+
 /**
  * Translate a 1-based line number in the old file to the new file.
- * Returns null when the line itself was deleted or rewritten.
+ * A deleted/rewritten line maps to the new-side position of the hunk that
+ * consumed it (the replacement code), flagged exact: false.
+ * Returns null only for malformed diffs.
  */
-export function mapLine(diffText: string, oldLine: number): number | null {
+export function mapLine(diffText: string, oldLine: number): LineMatch | null {
   let offset = 0;
   for (const h of parseHunks(diffText)) {
     if (h.oldLen === 0) {
@@ -68,11 +76,11 @@ export function mapLine(diffText: string, oldLine: number): number | null {
     for (const l of h.lines) {
       const c = l[0];
       if (c === ' ') {
-        if (o === oldLine) return n;
+        if (o === oldLine) return { line: n, exact: true };
         o++;
         n++;
       } else if (c === '-') {
-        if (o === oldLine) return null;
+        if (o === oldLine) return { line: n, exact: false }; // replacement code starts here
         o++;
       } else if (c === '+') {
         n++;
@@ -80,7 +88,7 @@ export function mapLine(diffText: string, oldLine: number): number | null {
     }
     return null; // malformed hunk; treat as lost rather than guess
   }
-  return oldLine + offset;
+  return { line: oldLine + offset, exact: true };
 }
 
 /**
@@ -124,7 +132,7 @@ export function matchSnippet(fileText: string, diffHunk: string): number | null 
 }
 
 export type MappedAnchor =
-  | { line: number; confidence: 'exact' | 'content' }
+  | { line: number; confidence: 'exact' | 'approx' | 'content' }
   | { line: null; confidence: 'lost'; reason: 'anchor-missing' | 'content-changed' };
 
 /** Full fallback chain for one thread anchor. */
@@ -145,8 +153,10 @@ export async function mapAnchor(opts: {
         ['diff', '--no-color', opts.anchorSha, '--', opts.path],
         { cwd: opts.cwd, maxBuffer: 10 * 1024 * 1024 },
       );
-      const line = mapLine(stdout, opts.anchorLine);
-      if (line !== null) return { line, confidence: 'exact' };
+      const res = mapLine(stdout, opts.anchorLine);
+      if (res !== null) {
+        return { line: Math.max(1, res.line), confidence: res.exact ? 'exact' : 'approx' };
+      }
     } catch {
       // anchor commit missing locally (behind the PR, rebase/force-push, shallow clone)
       anchorMissing = true;

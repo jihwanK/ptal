@@ -47,7 +47,9 @@ export class CommentUI implements vscode.Disposable {
         const why =
           anchor.confidence === 'lost'
             ? "PTAL couldn't find this spot in your current code."
-            : 'Position was recovered by content matching — double-check it.';
+            : anchor.confidence === 'approx'
+              ? 'The code changed here since the review — position is approximate.'
+              : 'Position was recovered by content matching — double-check it.';
         comments.push({
           author: { name: 'PTAL' },
           mode: vscode.CommentMode.Preview,
@@ -85,6 +87,7 @@ export class CommentUI implements vscode.Disposable {
 
       const labels: string[] = [];
       if (thread.isOutdated) labels.push('outdated');
+      if (anchor.confidence === 'approx') labels.push('code changed here — approximate position');
       if (anchor.confidence === 'content') labels.push('position matched by content');
       if (anchor.confidence === 'lost') {
         labels.push(
