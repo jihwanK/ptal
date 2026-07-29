@@ -37,6 +37,8 @@ export interface ReviewSet {
   title: string;
   url: string;
   headSha: string;
+  /** Open PRs sharing this head branch (different bases); we show the oldest. */
+  openPrCount: number;
   threads: ReviewThread[];
 }
 
@@ -76,6 +78,7 @@ const THREADS_QUERY = `
 query($owner: String!, $repo: String!, $branch: String!, $cursor: String) {
   repository(owner: $owner, name: $repo) {
     pullRequests(headRefName: $branch, states: OPEN, first: 1) {
+      totalCount
       nodes {
         number
         title
@@ -208,11 +211,13 @@ export async function fetchReviewSet(cwd: string): Promise<ReviewSet | null> {
   const accessToken = await token();
 
   let pr: any = null;
+  let openPrCount = 0;
   const rawThreads: any[] = [];
   let cursor: string | null = null;
   do {
     const data = await gql(accessToken, THREADS_QUERY, { owner, repo, branch, cursor });
     pr = data.repository?.pullRequests?.nodes?.[0];
+    openPrCount = data.repository?.pullRequests?.totalCount ?? 0;
     if (!pr) {
       return null;
     }
@@ -233,6 +238,7 @@ export async function fetchReviewSet(cwd: string): Promise<ReviewSet | null> {
     title: pr.title,
     url: pr.url,
     headSha,
+    openPrCount,
     threads,
   };
 }

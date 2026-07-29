@@ -69,6 +69,11 @@ export function activate(context: vscode.ExtensionContext) {
       if (behind) {
         out.appendLine('warning: local checkout does not contain the PR head commit — pull to map positions accurately');
       }
+      if (set.openPrCount > 1) {
+        // same head branch, different bases (e.g. backport PRs) — never hide that we picked one
+        out.appendLine(`warning: ${set.openPrCount} open PRs share this branch — showing the oldest (${set.label}); PR selection is on the backlog`);
+        void vscode.window.showWarningMessage(`PTAL: this branch has ${set.openPrCount} open PRs — showing ${set.label}.`);
+      }
 
       out.appendLine(`${set.label} "${set.title}" — threads: ${mapped.length} (unresolved: ${unresolved})`);
       for (const { thread, anchor } of mapped) {
