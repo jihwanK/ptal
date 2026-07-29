@@ -90,6 +90,40 @@ query($owner: String!, $repo: String!, $branch: String!, $cursor: String) {
   }
 }`;
 
+const REPLY_MUTATION = `
+mutation($threadId: ID!, $body: String!) {
+  addPullRequestReviewThreadReply(input: { pullRequestReviewThreadId: $threadId, body: $body }) {
+    comment { id }
+  }
+}`;
+
+const RESOLVE_MUTATION = `
+mutation($threadId: ID!) {
+  resolveReviewThread(input: { threadId: $threadId }) { thread { id isResolved } }
+}`;
+
+const UNRESOLVE_MUTATION = `
+mutation($threadId: ID!) {
+  unresolveReviewThread(input: { threadId: $threadId }) { thread { id isResolved } }
+}`;
+
+async function token(): Promise<string> {
+  const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
+  return session.accessToken;
+}
+
+export async function replyToThread(threadId: string, body: string): Promise<void> {
+  await gql(await token(), REPLY_MUTATION, { threadId, body });
+}
+
+export async function resolveThread(threadId: string): Promise<void> {
+  await gql(await token(), RESOLVE_MUTATION, { threadId });
+}
+
+export async function unresolveThread(threadId: string): Promise<void> {
+  await gql(await token(), UNRESOLVE_MUTATION, { threadId });
+}
+
 async function gql(token: string, query: string, variables: Record<string, unknown>): Promise<any> {
   const res = await fetch('https://api.github.com/graphql', {
     method: 'POST',
@@ -134,14 +168,13 @@ function toThread(node: any): ReviewThread {
 /** Fetch the open PR for the current branch and all its review threads. Null when no PR. */
 export async function fetchReviewSet(cwd: string): Promise<ReviewSet | null> {
   const { owner, repo, branch } = await detectRepo(cwd);
-  const session = await vscode.authentication.getSession('github', ['repo'], { createIfNone: true });
-  const token = session.accessToken;
+  const accessToken = await token();
 
   let pr: any = null;
   const rawThreads: any[] = [];
   let cursor: string | null = null;
   do {
-    const data = await gql(token, THREADS_QUERY, { owner, repo, branch, cursor });
+    const data = await gql(accessToken, THREADS_QUERY, { owner, repo, branch, cursor });
     pr = data.repository?.pullRequests?.nodes?.[0];
     if (!pr) {
       return null;

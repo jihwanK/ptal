@@ -28,8 +28,48 @@
       {
         "command": "ptal.nextUnresolved",
         "title": "PTAL: Go to Next Unresolved Comment"
+      },
+      {
+        "command": "ptal.reply",
+        "title": "Reply"
+      },
+      {
+        "command": "ptal.resolve",
+        "title": "Resolve Conversation",
+        "icon": "$(check)"
+      },
+      {
+        "command": "ptal.unresolve",
+        "title": "Unresolve Conversation",
+        "icon": "$(debug-restart)"
       }
-    ]
+    ],
+    "menus": {
+      "commandPalette": [
+        { "command": "ptal.reply", "when": "false" },
+        { "command": "ptal.resolve", "when": "false" },
+        { "command": "ptal.unresolve", "when": "false" }
+      ],
+      "comments/commentThread/context": [
+        {
+          "command": "ptal.reply",
+          "group": "inline",
+          "when": "commentController == ptal"
+        }
+      ],
+      "comments/commentThread/title": [
+        {
+          "command": "ptal.resolve",
+          "group": "navigation",
+          "when": "commentController == ptal && commentThread == unresolved"
+        },
+        {
+          "command": "ptal.unresolve",
+          "group": "navigation",
+          "when": "commentController == ptal && commentThread == resolved"
+        }
+      ]
+    }
   },
   "scripts": {
     "build": "node esbuild.mjs",

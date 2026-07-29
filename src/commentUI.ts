@@ -19,8 +19,18 @@ function snippetTail(snippet: string, max = 8): string {
 export class CommentUI implements vscode.Disposable {
   private controller = vscode.comments.createCommentController('ptal', 'PTAL');
   private rendered: vscode.CommentThread[] = [];
+  private meta = new Map<vscode.CommentThread, ReviewThread>();
   private targets: { uri: vscode.Uri; line: number; path: string }[] = [];
   private cursor = -1;
+
+  constructor() {
+    this.controller.options = { placeHolder: 'Reply — posted to the review thread on GitHub', prompt: '' };
+  }
+
+  /** Neutral thread data behind a rendered VS Code thread (for reply/resolve commands). */
+  threadData(t: vscode.CommentThread): ReviewThread | undefined {
+    return this.meta.get(t);
+  }
 
   render(root: string, mapped: MappedThread[]): void {
     this.clear();
@@ -57,7 +67,9 @@ export class CommentUI implements vscode.Disposable {
       }
 
       const t = this.controller.createCommentThread(uri, range, comments);
-      t.canReply = false; // replies arrive in M4
+      t.canReply = true;
+      t.contextValue = thread.isResolved ? 'resolved' : 'unresolved';
+      this.meta.set(t, thread);
       t.state = thread.isResolved
         ? vscode.CommentThreadState.Resolved
         : vscode.CommentThreadState.Unresolved;
@@ -100,6 +112,7 @@ export class CommentUI implements vscode.Disposable {
   clear(): void {
     for (const t of this.rendered) t.dispose();
     this.rendered = [];
+    this.meta.clear();
     this.targets = [];
     this.cursor = -1;
   }

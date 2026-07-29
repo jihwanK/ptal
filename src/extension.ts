@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { fetchReviewSet, repoRoot } from './github';
+import { fetchReviewSet, repoRoot, replyToThread, resolveThread, unresolveThread } from './github';
 import { mapAnchor } from './lineMapper';
 import { CommentUI, MappedThread } from './commentUI';
 
@@ -63,12 +63,52 @@ export function activate(context: vscode.ExtensionContext) {
     }
   };
 
+  const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
   context.subscriptions.push(
     vscode.commands.registerCommand('ptal.refresh', async () => {
       out.show(true);
       await refresh();
     }),
     vscode.commands.registerCommand('ptal.nextUnresolved', () => ui.nextUnresolved()),
+    vscode.commands.registerCommand('ptal.reply', async (reply: vscode.CommentReply) => {
+      const data = ui.threadData(reply.thread);
+      if (!data || !reply.text.trim()) {
+        return;
+      }
+      try {
+        await replyToThread(data.id, reply.text);
+        await refresh();
+      } catch (e) {
+        // never lose what the user wrote
+        await vscode.env.clipboard.writeText(reply.text);
+        void vscode.window.showErrorMessage(`PTAL: reply failed (${msg(e)}) — your text was copied to the clipboard.`);
+      }
+    }),
+    vscode.commands.registerCommand('ptal.resolve', async (thread: vscode.CommentThread) => {
+      const data = ui.threadData(thread);
+      if (!data) {
+        return;
+      }
+      try {
+        await resolveThread(data.id);
+        await refresh();
+      } catch (e) {
+        void vscode.window.showErrorMessage(`PTAL: resolve failed (${msg(e)})`);
+      }
+    }),
+    vscode.commands.registerCommand('ptal.unresolve', async (thread: vscode.CommentThread) => {
+      const data = ui.threadData(thread);
+      if (!data) {
+        return;
+      }
+      try {
+        await unresolveThread(data.id);
+        await refresh();
+      } catch (e) {
+        void vscode.window.showErrorMessage(`PTAL: unresolve failed (${msg(e)})`);
+      }
+    }),
   );
 
   void refresh();
