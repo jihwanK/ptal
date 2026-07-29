@@ -125,7 +125,7 @@ export function matchSnippet(fileText: string, diffHunk: string): number | null 
 
 export type MappedAnchor =
   | { line: number; confidence: 'exact' | 'content' }
-  | { line: null; confidence: 'lost' };
+  | { line: null; confidence: 'lost'; reason: 'anchor-missing' | 'content-changed' };
 
 /** Full fallback chain for one thread anchor. */
 export async function mapAnchor(opts: {
@@ -135,6 +135,7 @@ export async function mapAnchor(opts: {
   anchorLine: number | null;
   snippet: string;
 }): Promise<MappedAnchor> {
+  let anchorMissing = false;
   if (opts.anchorLine !== null) {
     try {
       // anchor commit → working tree, uncommitted changes included.
@@ -147,7 +148,8 @@ export async function mapAnchor(opts: {
       const line = mapLine(stdout, opts.anchorLine);
       if (line !== null) return { line, confidence: 'exact' };
     } catch {
-      // anchor commit missing locally (rebase/force-push/shallow clone) — fall through
+      // anchor commit missing locally (behind the PR, rebase/force-push, shallow clone)
+      anchorMissing = true;
     }
   }
   try {
@@ -157,5 +159,5 @@ export async function mapAnchor(opts: {
   } catch {
     // file no longer exists
   }
-  return { line: null, confidence: 'lost' };
+  return { line: null, confidence: 'lost', reason: anchorMissing ? 'anchor-missing' : 'content-changed' };
 }

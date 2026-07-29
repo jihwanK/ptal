@@ -43,14 +43,20 @@ export class CommentUI implements vscode.Disposable {
       const comments: vscode.Comment[] = [];
       if (anchor.confidence !== 'exact' && thread.comments[0]?.snippet) {
         // GitHub-style frozen context: when the position is approximate or lost,
-        // show what the reviewer was actually looking at.
+        // show what the reviewer was actually looking at, plus an escape hatch.
+        const why =
+          anchor.confidence === 'lost'
+            ? "PTAL couldn't find this spot in your current code."
+            : 'Position was recovered by content matching — double-check it.';
         comments.push({
           author: { name: 'PTAL' },
           mode: vscode.CommentMode.Preview,
           body: new vscode.MarkdownString(
-            'Review-time context (position is approximate):\n```diff\n' +
-              snippetTail(thread.comments[0].snippet) +
-              '\n```',
+            `**Code as the reviewer saw it** — ${why}\n` +
+              '```diff\n' +
+              snippetTail(thread.comments[0].snippet, 4) +
+              '\n```\n' +
+              `[Open this comment on GitHub](${thread.comments[0].url})`,
           ),
         });
       }
@@ -81,7 +87,11 @@ export class CommentUI implements vscode.Disposable {
       if (thread.isOutdated) labels.push('outdated');
       if (anchor.confidence === 'content') labels.push('position matched by content');
       if (anchor.confidence === 'lost') {
-        labels.push(`position unknown (was line ${thread.anchorLine ?? '?'})`);
+        labels.push(
+          anchor.reason === 'anchor-missing'
+            ? `local checkout behind the PR? (was line ${thread.anchorLine ?? '?'}) — try git pull`
+            : `original code no longer found (was line ${thread.anchorLine ?? '?'})`,
+        );
       }
       t.label = labels.length ? `⚠ ${labels.join(' · ')}` : undefined;
 

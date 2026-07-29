@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { fetchReviewSet, repoRoot, replyToThread, resolveThread, unresolveThread, viewer } from './github';
+import { fetchReviewSet, localContains, repoRoot, replyToThread, resolveThread, unresolveThread, viewer } from './github';
 import { mapAnchor } from './lineMapper';
 import { CommentUI, MappedThread } from './commentUI';
 
@@ -45,8 +45,13 @@ export function activate(context: vscode.ExtensionContext) {
       ui.render(root, mapped);
 
       const unresolved = mapped.filter((m) => !m.thread.isResolved).length;
-      status.text = `$(comment-discussion) ${set.label}: ${unresolved}/${mapped.length}`;
+      const behind = !(await localContains(root, set.headSha));
+      status.text = `${behind ? '$(warning) ' : ''}$(comment-discussion) ${set.label}: ${unresolved}/${mapped.length}`;
       status.tooltip = `${set.title}\n${unresolved} unresolved review comment(s) — click to jump to the next one`;
+      if (behind) {
+        status.tooltip += '\n⚠ Local checkout is behind the PR head — run git pull for accurate positions.';
+        out.appendLine('warning: local checkout does not contain the PR head commit — pull to map positions accurately');
+      }
       status.show();
 
       out.appendLine(`${set.label} "${set.title}" — threads: ${mapped.length} (unresolved: ${unresolved})`);
@@ -54,8 +59,9 @@ export function activate(context: vscode.ExtensionContext) {
         const mark = thread.isResolved ? '✓' : '•';
         const outdated = thread.isOutdated ? ' (outdated)' : '';
         const head = thread.comments[0];
+        const conf = anchor.confidence === 'lost' ? `lost:${anchor.reason}` : anchor.confidence;
         out.appendLine(
-          `  ${mark} ${thread.path}:${anchor.line ?? '?'} [${anchor.confidence}]${outdated} — ${head?.author}: ${firstLine(head?.body)}`,
+          `  ${mark} ${thread.path}:${anchor.line ?? '?'} [${conf}]${outdated} — ${head?.author}: ${firstLine(head?.body)}`,
         );
       }
     } catch (e) {

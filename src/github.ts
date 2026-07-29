@@ -44,6 +44,16 @@ export async function repoRoot(cwd: string): Promise<string> {
   return stdout.trim();
 }
 
+/** True when `sha` is part of local history (i.e. the checkout is not behind it). */
+export async function localContains(cwd: string, sha: string): Promise<boolean> {
+  try {
+    await exec('git', ['merge-base', '--is-ancestor', sha, 'HEAD'], { cwd });
+    return true;
+  } catch {
+    return false; // unknown sha or not an ancestor — either way, positions may be stale
+  }
+}
+
 export async function detectRepo(cwd: string): Promise<{ owner: string; repo: string; branch: string }> {
   const { stdout: url } = await exec('git', ['remote', 'get-url', 'origin'], { cwd });
   const m = url.trim().match(/github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/);
