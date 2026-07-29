@@ -31,12 +31,14 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "vscode:prepublish": "node esbuild.mjs"
+    "vscode:prepublish": "node esbuild.mjs",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
     "@types/vscode": "^1.90.0",
     "esbuild": "^0.24.0",
-    "typescript": "^5.5.0"
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.9"
   }
 }

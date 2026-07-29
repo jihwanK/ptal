@@ -4,4 +4,8 @@ dist/
 *.vsix
 .omc/
 docs/superpowers/
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.md
 .DS_Store
