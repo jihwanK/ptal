@@ -1,0 +1,42 @@
+{
+  "name": "ptal",
+  "displayName": "PTAL — PR Review Comments in Your Editor",
+  "description": "Handle every PR review comment without leaving your code — then ask for another look.",
+  "version": "0.0.1",
+  "publisher": "jihwank",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jihwanK/ptal.git"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "workspaceContains:.git"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "ptal.refresh",
+        "title": "PTAL: Refresh Review Comments"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "vscode:prepublish": "node esbuild.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.5.0"
+  }
+}
