@@ -18,7 +18,7 @@ function snippetTail(snippet: string, max = 8): string {
 
 export class CommentUI implements vscode.Disposable {
   private controller = vscode.comments.createCommentController('ptal', 'PTAL');
-  private rendered: vscode.CommentThread[] = [];
+  private rendered: { t: vscode.CommentThread; highlightable: boolean }[] = [];
   private meta = new Map<vscode.CommentThread, ReviewThread>();
   private targets: { uri: vscode.Uri; line: number; path: string }[] = [];
   private cursor = -1;
@@ -39,15 +39,17 @@ export class CommentUI implements vscode.Disposable {
     this.editorListener = vscode.window.onDidChangeVisibleTextEditors(() => this.applyHighlights());
   }
 
-  private applyHighlights(): void {
-    for (const editor of vscode.window.visibleTextEditors) {
-      editor.setDecorations(this.highlight, this.highlightRanges.get(editor.document.uri.toString()) ?? []);
-    }
-  }
-
   /** Neutral thread data behind a rendered VS Code thread (for reply/resolve commands). */
   threadData(t: vscode.CommentThread): ReviewThread | undefined {
     return this.meta.get(t);
+  }
+
+  counts(): { unresolved: number; total: number } {
+    let unresolved = 0;
+    for (const data of this.meta.values()) {
+      if (!data.isResolved) unresolved++;
+    }
+    return { unresolved, total: this.meta.size };
   }
 
   render(root: string, mapped: MappedThread[]): void {
@@ -118,21 +120,53 @@ export class CommentUI implements vscode.Disposable {
       }
       t.label = labels.length ? `⚠ ${labels.join(' · ')}` : undefined;
 
-      this.rendered.push(t);
-      if (!thread.isResolved) {
-        this.targets.push({ uri, line: start, path: thread.path });
-        if (anchor.line !== null) {
-          const key = uri.toString();
-          const ranges = this.highlightRanges.get(key) ?? [];
-          ranges.push(range);
-          this.highlightRanges.set(key, ranges);
-        }
-      }
+      this.rendered.push({ t, highlightable: anchor.line !== null });
     }
 
+    this.rebuildNavigation();
+  }
+
+  /** Flip a thread's resolved state in place — no full refresh, no flicker. */
+  setResolved(t: vscode.CommentThread, resolved: boolean): void {
+    const data = this.meta.get(t);
+    if (!data) {
+      return;
+    }
+    data.isResolved = resolved;
+    t.state = resolved ? vscode.CommentThreadState.Resolved : vscode.CommentThreadState.Unresolved;
+    t.contextValue = resolved ? 'resolved' : 'unresolved';
+    t.collapsibleState = resolved
+      ? vscode.CommentThreadCollapsibleState.Collapsed
+      : vscode.CommentThreadCollapsibleState.Expanded;
+    this.rebuildNavigation();
+  }
+
+  /** Recompute jump targets and highlights from current thread states. */
+  private rebuildNavigation(): void {
+    this.targets = [];
+    this.highlightRanges.clear();
+    for (const { t, highlightable } of this.rendered) {
+      const data = this.meta.get(t);
+      if (!data || data.isResolved || !t.range) {
+        continue;
+      }
+      this.targets.push({ uri: t.uri, line: t.range.start.line + 1, path: data.path });
+      if (highlightable) {
+        const key = t.uri.toString();
+        const ranges = this.highlightRanges.get(key) ?? [];
+        ranges.push(t.range);
+        this.highlightRanges.set(key, ranges);
+      }
+    }
     this.targets.sort((a, b) => a.path.localeCompare(b.path) || a.line - b.line);
     this.cursor = -1;
     this.applyHighlights();
+  }
+
+  private applyHighlights(): void {
+    for (const editor of vscode.window.visibleTextEditors) {
+      editor.setDecorations(this.highlight, this.highlightRanges.get(editor.document.uri.toString()) ?? []);
+    }
   }
 
   async nextUnresolved(): Promise<void> {
@@ -150,7 +184,7 @@ export class CommentUI implements vscode.Disposable {
   }
 
   clear(): void {
-    for (const t of this.rendered) t.dispose();
+    for (const { t } of this.rendered) t.dispose();
     this.rendered = [];
     this.meta.clear();
     this.targets = [];

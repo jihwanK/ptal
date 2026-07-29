@@ -14,6 +14,22 @@ export function activate(context: vscode.ExtensionContext) {
   status.command = 'ptal.nextUnresolved';
   context.subscriptions.push(out, ui, status);
 
+  let statusBase: { label: string; title: string; behind: boolean } | null = null;
+
+  const updateStatus = () => {
+    if (!statusBase) {
+      status.hide();
+      return;
+    }
+    const { unresolved, total } = ui.counts();
+    status.text = `${statusBase.behind ? '$(warning) ' : ''}$(comment-discussion) ${statusBase.label}: ${unresolved}/${total}`;
+    status.tooltip = `${statusBase.title}\n${unresolved} unresolved review comment(s) — click to jump to the next one`;
+    if (statusBase.behind) {
+      status.tooltip += '\n⚠ Local checkout is behind the PR head — run git pull for accurate positions.';
+    }
+    status.show();
+  };
+
   const refresh = async () => {
     const folder = vscode.workspace.workspaceFolders?.[0];
     if (!folder) {
@@ -25,7 +41,8 @@ export function activate(context: vscode.ExtensionContext) {
       const set = await fetchReviewSet(root);
       if (!set) {
         ui.clear();
-        status.hide();
+        statusBase = null;
+        updateStatus();
         out.appendLine('no open PR for the current branch');
         return;
       }
@@ -47,13 +64,11 @@ export function activate(context: vscode.ExtensionContext) {
 
       const unresolved = mapped.filter((m) => !m.thread.isResolved).length;
       const behind = !(await localContains(root, set.headSha));
-      status.text = `${behind ? '$(warning) ' : ''}$(comment-discussion) ${set.label}: ${unresolved}/${mapped.length}`;
-      status.tooltip = `${set.title}\n${unresolved} unresolved review comment(s) — click to jump to the next one`;
+      statusBase = { label: set.label, title: set.title, behind };
+      updateStatus();
       if (behind) {
-        status.tooltip += '\n⚠ Local checkout is behind the PR head — run git pull for accurate positions.';
         out.appendLine('warning: local checkout does not contain the PR head commit — pull to map positions accurately');
       }
-      status.show();
 
       out.appendLine(`${set.label} "${set.title}" — threads: ${mapped.length} (unresolved: ${unresolved})`);
       for (const { thread, anchor } of mapped) {
@@ -109,7 +124,9 @@ export function activate(context: vscode.ExtensionContext) {
       }
       try {
         await resolveThread(data.id);
-        await refresh();
+        // optimistic: collapse in place, drop from navigation/highlights, no flicker
+        ui.setResolved(thread, true);
+        updateStatus();
       } catch (e) {
         void vscode.window.showErrorMessage(`PTAL: resolve failed (${msg(e)})`);
       }
@@ -121,7 +138,8 @@ export function activate(context: vscode.ExtensionContext) {
       }
       try {
         await unresolveThread(data.id);
-        await refresh();
+        ui.setResolved(thread, false);
+        updateStatus();
       } catch (e) {
         void vscode.window.showErrorMessage(`PTAL: unresolve failed (${msg(e)})`);
       }
