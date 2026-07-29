@@ -70,6 +70,7 @@ query($owner: String!, $repo: String!, $branch: String!, $cursor: String) {
             path
             line
             originalLine
+            diffSide
             isResolved
             isOutdated
             comments(first: 50) {
@@ -116,6 +117,17 @@ export async function replyToThread(threadId: string, body: string): Promise<voi
   await gql(await token(), REPLY_MUTATION, { threadId, body });
 }
 
+let viewerCache: { login: string; avatarUrl?: string } | null = null;
+
+/** The signed-in user, for optimistic UI. Cached for the session. */
+export async function viewer(): Promise<{ login: string; avatarUrl?: string }> {
+  if (!viewerCache) {
+    const data = await gql(await token(), 'query { viewer { login avatarUrl } }', {});
+    viewerCache = data.viewer;
+  }
+  return viewerCache!;
+}
+
 export async function resolveThread(threadId: string): Promise<void> {
   await gql(await token(), RESOLVE_MUTATION, { threadId });
 }
@@ -154,11 +166,15 @@ function toThread(node: any): ReviewThread {
     snippet: c.diffHunk ?? '',
     createdAt: c.createdAt,
   }));
+  // LEFT-side threads target a deleted line: their numbers are base-side, so hunk
+  // arithmetic against the head commit would silently land on the wrong line.
+  // Null anchorLine routes them to the snippet fallback (honest failure + frozen context).
+  const leftSide = node.diffSide === 'LEFT';
   return {
     id: node.id,
     path: node.path,
     anchorSha: '', // filled by caller: needs headRefOid for the non-outdated case
-    anchorLine: node.isOutdated ? node.originalLine : node.line,
+    anchorLine: leftSide ? null : node.isOutdated ? node.originalLine : node.line,
     isOutdated: node.isOutdated,
     isResolved: node.isResolved,
     comments,

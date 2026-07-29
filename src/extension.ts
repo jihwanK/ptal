@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { fetchReviewSet, repoRoot, replyToThread, resolveThread, unresolveThread } from './github';
+import { fetchReviewSet, repoRoot, replyToThread, resolveThread, unresolveThread, viewer } from './github';
 import { mapAnchor } from './lineMapper';
 import { CommentUI, MappedThread } from './commentUI';
 
@@ -78,7 +78,17 @@ export function activate(context: vscode.ExtensionContext) {
       }
       try {
         await replyToThread(data.id, reply.text);
-        await refresh();
+        // optimistic append: no full refresh, so the thread stays open and nothing flickers
+        const me = await viewer();
+        reply.thread.comments = [
+          ...reply.thread.comments,
+          {
+            author: { name: me.login, iconPath: me.avatarUrl ? vscode.Uri.parse(me.avatarUrl) : undefined },
+            mode: vscode.CommentMode.Preview,
+            body: new vscode.MarkdownString(reply.text),
+            timestamp: new Date(),
+          },
+        ];
       } catch (e) {
         // never lose what the user wrote
         await vscode.env.clipboard.writeText(reply.text);
