@@ -13,6 +13,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- `PTAL: Show/Hide Resolved Comments` — focus mode that hides resolved threads from the editor (default: shown, remembered per workspace)
 - Inline review threads mapped to the current working tree (3-stage fallback: diff arithmetic → content matching → honest failure)
 - Comments follow edited code with an approximate-position badge; review-time snippet shown when a position degrades
 - Reply and resolve/unresolve from the editor, with optimistic in-place updates

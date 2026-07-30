@@ -24,6 +24,7 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
 export function activate(context: vscode.ExtensionContext) {
   const out = vscode.window.createOutputChannel('PTAL');
   const ui = new CommentUI();
+  ui.setShowResolved(context.workspaceState.get<boolean>('ptal.showResolved', true));
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   status.command = 'ptal.nextUnresolved';
   context.subscriptions.push(out, ui, status);
@@ -140,6 +141,13 @@ export function activate(context: vscode.ExtensionContext) {
       await refresh();
     }),
     vscode.commands.registerCommand('ptal.nextUnresolved', () => ui.nextUnresolved()),
+    vscode.commands.registerCommand('ptal.toggleResolved', async () => {
+      const next = !ui.resolvedShown();
+      ui.setShowResolved(next);
+      await context.workspaceState.update('ptal.showResolved', next);
+      updateStatus();
+      vscode.window.setStatusBarMessage(`PTAL: resolved comments ${next ? 'shown' : 'hidden'}`, 2000);
+    }),
     vscode.commands.registerCommand('ptal.reply', async (reply: vscode.CommentReply) => {
       const data = ui.threadData(reply.thread);
       if (!data || !reply.text.trim()) {

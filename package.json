@@ -40,6 +40,10 @@
         "title": "PTAL: Go to Next Unresolved Comment"
       },
       {
+        "command": "ptal.toggleResolved",
+        "title": "PTAL: Show/Hide Resolved Comments"
+      },
+      {
         "command": "ptal.reply",
         "title": "Reply"
       },
