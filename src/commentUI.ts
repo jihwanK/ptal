@@ -63,9 +63,22 @@ export class CommentUI implements vscode.Disposable {
       const range = new vscode.Range(start - 1, 0, line - 1, 0);
 
       const comments: vscode.Comment[] = [];
+      for (const c of thread.comments) {
+        comments.push({
+          author: {
+            name: c.author,
+            iconPath: c.authorAvatar ? vscode.Uri.parse(c.authorAvatar) : undefined,
+          },
+          mode: vscode.CommentMode.Preview,
+          body: new vscode.MarkdownString(c.body),
+          timestamp: new Date(c.createdAt),
+        });
+      }
       if (anchor.confidence !== 'exact' && thread.comments[0]?.snippet) {
         // GitHub-style frozen context: when the position is approximate or lost,
         // show what the reviewer was actually looking at, plus an escape hatch.
+        // Appended LAST: the Comments panel summarizes a thread by its first
+        // comment, which must stay the reviewer's words — not our context block.
         const why =
           anchor.confidence === 'lost'
             ? "PTAL couldn't find this spot in your current code."
@@ -82,17 +95,6 @@ export class CommentUI implements vscode.Disposable {
               '\n```\n' +
               `[Open this comment on GitHub](${thread.comments[0].url})`,
           ),
-        });
-      }
-      for (const c of thread.comments) {
-        comments.push({
-          author: {
-            name: c.author,
-            iconPath: c.authorAvatar ? vscode.Uri.parse(c.authorAvatar) : undefined,
-          },
-          mode: vscode.CommentMode.Preview,
-          body: new vscode.MarkdownString(c.body),
-          timestamp: new Date(c.createdAt),
         });
       }
 

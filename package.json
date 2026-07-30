@@ -55,8 +55,18 @@
       "comments/commentThread/context": [
         {
           "command": "ptal.reply",
-          "group": "inline",
+          "group": "inline@1",
           "when": "commentController == ptal"
+        },
+        {
+          "command": "ptal.resolve",
+          "group": "inline@2",
+          "when": "commentController == ptal && commentThread == unresolved"
+        },
+        {
+          "command": "ptal.unresolve",
+          "group": "inline@2",
+          "when": "commentController == ptal && commentThread == resolved"
         }
       ],
       "comments/commentThread/title": [
