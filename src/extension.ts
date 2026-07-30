@@ -25,15 +25,12 @@ export function activate(context: vscode.ExtensionContext) {
   const out = vscode.window.createOutputChannel('PTAL');
   const ui = new CommentUI();
   ui.setShowResolved(context.workspaceState.get<boolean>('ptal.showResolved', true));
+  // one block, one identity: everything PTAL lives behind a single status item
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-  status.command = 'ptal.nextUnresolved';
-  const refreshBtn = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
-  refreshBtn.text = '$(refresh)';
-  refreshBtn.tooltip = 'PTAL: Refresh review comments';
-  refreshBtn.command = 'ptal.refresh';
-  context.subscriptions.push(out, ui, status, refreshBtn);
+  status.command = 'ptal.menu';
+  context.subscriptions.push(out, ui, status);
 
-  let statusBase: { label: string; title: string; behind: boolean } | null = null;
+  let statusBase: { label: string; title: string; url: string; behind: boolean } | null = null;
   let statusError: string | null = null;
 
   const updateStatus = () => {
@@ -43,23 +40,20 @@ export function activate(context: vscode.ExtensionContext) {
       status.tooltip = `PTAL error: ${statusError}\nClick to retry.`;
       status.command = 'ptal.refresh';
       status.show();
-      refreshBtn.show();
       return;
     }
-    status.command = 'ptal.nextUnresolved';
+    status.command = 'ptal.menu';
     if (!statusBase) {
       status.hide();
-      refreshBtn.hide();
       return;
     }
     const { unresolved, total } = ui.counts();
     status.text = `${statusBase.behind ? '$(warning) ' : ''}$(comment-discussion) ${statusBase.label}: ${unresolved}/${total}`;
-    status.tooltip = `${statusBase.title}\n${unresolved} unresolved review comment(s) — click to jump to the next one`;
+    status.tooltip = `${statusBase.title}\n${unresolved} unresolved review comment(s) — click for actions`;
     if (statusBase.behind) {
       status.tooltip += '\n⚠ Local checkout is behind the PR head — run git pull for accurate positions.';
     }
     status.show();
-    refreshBtn.show();
   };
 
   // stale-refresh guard: branch watcher, manual refresh, and activation can
@@ -110,7 +104,7 @@ export function activate(context: vscode.ExtensionContext) {
         return;
       }
       statusError = null;
-      statusBase = { label: set.label, title: set.title, behind };
+      statusBase = { label: set.label, title: set.title, url: set.url, behind };
       updateStatus();
       if (behind) {
         out.appendLine('warning: local checkout does not contain the PR head commit — pull to map positions accurately');
@@ -148,6 +142,36 @@ export function activate(context: vscode.ExtensionContext) {
       await refresh();
     }),
     vscode.commands.registerCommand('ptal.nextUnresolved', () => ui.nextUnresolved()),
+    vscode.commands.registerCommand('ptal.menu', async () => {
+      type Item = vscode.QuickPickItem & { action: 'next' | 'refresh' | 'toggle' | 'open' };
+      const items: Item[] = [
+        { label: '$(arrow-right) Go to next unresolved comment', action: 'next' },
+        { label: '$(refresh) Refresh review comments', action: 'refresh' },
+        { label: `$(eye) ${ui.resolvedShown() ? 'Hide' : 'Show'} resolved comments`, action: 'toggle' },
+      ];
+      if (statusBase?.url) {
+        items.push({ label: '$(link-external) Open PR on GitHub', action: 'open' });
+      }
+      const pick = await vscode.window.showQuickPick(items, {
+        placeHolder: statusBase ? `${statusBase.label} — ${statusBase.title}` : 'PTAL',
+      });
+      switch (pick?.action) {
+        case 'next':
+          await ui.nextUnresolved();
+          break;
+        case 'refresh':
+          await refresh();
+          break;
+        case 'toggle':
+          await vscode.commands.executeCommand('ptal.toggleResolved');
+          break;
+        case 'open':
+          if (statusBase?.url) {
+            void vscode.env.openExternal(vscode.Uri.parse(statusBase.url));
+          }
+          break;
+      }
+    }),
     vscode.commands.registerCommand('ptal.toggleResolved', async () => {
       const next = !ui.resolvedShown();
       ui.setShowResolved(next);

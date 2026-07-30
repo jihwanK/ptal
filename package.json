@@ -44,6 +44,10 @@
         "title": "PTAL: Show/Hide Resolved Comments"
       },
       {
+        "command": "ptal.menu",
+        "title": "PTAL: Actions"
+      },
+      {
         "command": "ptal.reply",
         "title": "Reply"
       },
