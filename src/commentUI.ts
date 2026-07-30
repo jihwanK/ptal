@@ -22,6 +22,11 @@ export class CommentUI implements vscode.Disposable {
   private meta = new Map<vscode.CommentThread, ReviewThread>();
   private targets: { uri: vscode.Uri; line: number; path: string }[] = [];
   private cursor = -1;
+  // "focus mode": hide resolved threads entirely; default keeps them visible (collapsed)
+  private showResolved = true;
+  private totals = { unresolved: 0, total: 0 };
+  private lastRoot: string | null = null;
+  private lastMapped: MappedThread[] = [];
 
   // Subtle, theme-aware highlight on lines with unresolved threads.
   // Theme color variables keep it readable in both light and dark themes.
@@ -45,17 +50,33 @@ export class CommentUI implements vscode.Disposable {
   }
 
   counts(): { unresolved: number; total: number } {
-    let unresolved = 0;
-    for (const data of this.meta.values()) {
-      if (!data.isResolved) unresolved++;
+    return { ...this.totals }; // truthful even while resolved threads are hidden
+  }
+
+  resolvedShown(): boolean {
+    return this.showResolved;
+  }
+
+  setShowResolved(show: boolean): void {
+    this.showResolved = show;
+    if (this.lastRoot !== null) {
+      this.render(this.lastRoot, this.lastMapped);
     }
-    return { unresolved, total: this.meta.size };
   }
 
   render(root: string, mapped: MappedThread[]): void {
     this.clear();
+    this.lastRoot = root;
+    this.lastMapped = mapped;
+    this.totals = {
+      unresolved: mapped.filter((m) => !m.thread.isResolved).length,
+      total: mapped.length,
+    };
 
     for (const { thread, anchor } of mapped) {
+      if (!this.showResolved && thread.isResolved) {
+        continue;
+      }
       const uri = vscode.Uri.file(join(root, thread.path));
       const line = anchor.line ?? 1; // lost → anchor at top of file, flagged by label
       // multi-line review ranges span startLine..line; single-line comments collapse to one line
@@ -135,6 +156,15 @@ export class CommentUI implements vscode.Disposable {
       return;
     }
     data.isResolved = resolved;
+    this.totals.unresolved += resolved ? -1 : 1;
+    if (resolved && !this.showResolved) {
+      // focus mode: a freshly resolved thread leaves the editor immediately
+      t.dispose();
+      this.meta.delete(t);
+      this.rendered = this.rendered.filter((r) => r.t !== t);
+      this.rebuildNavigation();
+      return;
+    }
     t.state = resolved ? vscode.CommentThreadState.Resolved : vscode.CommentThreadState.Unresolved;
     t.contextValue = resolved ? 'resolved' : 'unresolved';
     t.collapsibleState = resolved
@@ -191,6 +221,9 @@ export class CommentUI implements vscode.Disposable {
     this.meta.clear();
     this.targets = [];
     this.cursor = -1;
+    this.lastRoot = null;
+    this.lastMapped = [];
+    this.totals = { unresolved: 0, total: 0 };
     this.highlightRanges.clear();
     this.applyHighlights();
   }
