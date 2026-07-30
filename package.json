@@ -4,6 +4,7 @@
   "description": "Handle every PR review comment without leaving your code — then ask for another look.",
   "version": "0.0.1",
   "publisher": "jihwank",
+  "icon": "media/icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",
