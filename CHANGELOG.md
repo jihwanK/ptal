@@ -5,6 +5,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- Status bar unified into a single PTAL block; clicking opens an action menu (next unresolved / refresh / show-hide resolved / open PR on GitHub)
+
 ### Fixed
 
 - Errors (auth, network, git) now surface in the status bar with click-to-retry instead of hiding in the output channel
