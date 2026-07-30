@@ -44,12 +44,12 @@ code --install-extension ptal-*.vsix
 
 ## Limits (honest ones)
 
-- PR-level review summaries (the block AI reviewers like Codex submit) are not shown yet — [#1](https://github.com/jihwanK/ptal/issues/1)
-- github.com only: no GHES ([#6](https://github.com/jihwanK/ptal/issues/6)), no fork-based PRs ([#5](https://github.com/jihwanK/ptal/issues/5))
-- Built for the author handling received reviews; reviewers can use it today by checking out the PR branch, but creating new threads is future work ([#7](https://github.com/jihwanK/ptal/issues/7))
+- PR-level review summaries (the block AI reviewers like Codex submit) are not shown yet
+- github.com only — no GitHub Enterprise Server, no fork-based PRs
+- Built for the author handling received reviews; reviewers can use it today by checking out the PR branch, but creating new threads is future work
 - When code moves to a different file, tracking ends — you get the honest badge, not a guess
 
-Roadmap lives in the [issues](https://github.com/jihwanK/ptal/issues).
+Known limitations and planned work are tracked in the [issues](https://github.com/jihwanK/ptal/issues).
 
 ## License
 
