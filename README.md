@@ -32,6 +32,8 @@ Open a branch that has an open PR, and:
 
 Reply and Resolve/Unresolve live on the comment threads themselves.
 
+> **Tip:** the built-in **Comments** panel lists every thread across files — your review inbox. Drag it into the sidebar once (right-click its tab → Move View) and it stays there, right next to your code. The default bottom position competes with the terminal; the sidebar is where it shines.
+
 ## Status
 
 **v1 complete, in daily dogfooding — not yet on the marketplace.** Works with github.com repositories, built for the PR author handling received reviews. Planned work is tracked in the [issues](https://github.com/jihwanK/ptal/issues).
