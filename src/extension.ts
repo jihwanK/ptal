@@ -30,7 +30,12 @@ export function activate(context: vscode.ExtensionContext) {
     status.show();
   };
 
+  // stale-refresh guard: branch watcher, manual refresh, and activation can
+  // overlap — only the latest invocation may touch the UI
+  let refreshGen = 0;
+
   const refresh = async () => {
+    const gen = ++refreshGen;
     const folder = vscode.workspace.workspaceFolders?.[0];
     if (!folder) {
       return;
@@ -39,6 +44,9 @@ export function activate(context: vscode.ExtensionContext) {
     try {
       const root = await repoRoot(folder.uri.fsPath);
       const set = await fetchReviewSet(root);
+      if (gen !== refreshGen) {
+        return; // superseded by a newer refresh
+      }
       if (!set) {
         ui.clear();
         statusBase = null;
@@ -60,10 +68,16 @@ export function activate(context: vscode.ExtensionContext) {
           }),
         })),
       );
+      if (gen !== refreshGen) {
+        return; // superseded while mapping
+      }
       ui.render(root, mapped);
 
       const unresolved = mapped.filter((m) => !m.thread.isResolved).length;
       const behind = !(await localContains(root, set.headSha));
+      if (gen !== refreshGen) {
+        return;
+      }
       statusBase = { label: set.label, title: set.title, behind };
       updateStatus();
       if (behind) {

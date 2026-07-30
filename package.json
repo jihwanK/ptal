@@ -14,7 +14,15 @@
     "vscode": "^1.90.0"
   },
   "categories": [
-    "Other"
+    "SCM Providers"
+  ],
+  "keywords": [
+    "github",
+    "pull request",
+    "pr",
+    "code review",
+    "review comments",
+    "resolve"
   ],
   "activationEvents": [
     "workspaceContains:.git",

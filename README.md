@@ -34,22 +34,15 @@ Reply and Resolve/Unresolve live on the comment threads themselves.
 
 ## Status
 
-**v1 complete, in daily dogfooding — not yet on the marketplace.** To try it now:
+**v1 complete, in daily dogfooding — not yet on the marketplace.** Works with github.com repositories, built for the PR author handling received reviews. Planned work is tracked in the [issues](https://github.com/jihwanK/ptal/issues).
+
+To try it now:
 
 ```bash
 git clone https://github.com/jihwanK/ptal && cd ptal
 npm install && npx @vscode/vsce package
 code --install-extension ptal-*.vsix
 ```
-
-## Limits (honest ones)
-
-- PR-level review summaries (the block AI reviewers like Codex submit) are not shown yet
-- github.com only — no GitHub Enterprise Server, no fork-based PRs
-- Built for the author handling received reviews; reviewers can use it today by checking out the PR branch, but creating new threads is future work
-- When code moves to a different file, tracking ends — you get the honest badge, not a guess
-
-Known limitations and planned work are tracked in the [issues](https://github.com/jihwanK/ptal/issues).
 
 ## License
 
