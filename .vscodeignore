@@ -1,4 +1,5 @@
 .vscode/
+media/demo.gif
 src/
 node_modules/
 esbuild.mjs

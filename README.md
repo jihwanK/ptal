@@ -2,7 +2,7 @@
 
 > **P**lease **T**ake **A**nother **L**ook — the thing you say after handling every review comment. This extension gets you there without leaving your code.
 
-<!-- TODO: demo GIF — comment click → exact line jump → reply/resolve in place (issue #8) -->
+![PTAL demo — jump to the exact line, reply and resolve in place](media/demo.gif)
 
 ## Why
 
