@@ -7,6 +7,20 @@ function firstLine(s: string | undefined): string {
   return (s ?? '').split('\n', 1)[0].slice(0, 80);
 }
 
+// bounded fan-out: a 100-thread PR must not spawn 100 git processes at once
+async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const idx = next++;
+      results[idx] = await fn(items[idx]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
+
 export function activate(context: vscode.ExtensionContext) {
   const out = vscode.window.createOutputChannel('PTAL');
   const ui = new CommentUI();
@@ -15,8 +29,18 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(out, ui, status);
 
   let statusBase: { label: string; title: string; behind: boolean } | null = null;
+  let statusError: string | null = null;
 
   const updateStatus = () => {
+    if (statusError) {
+      // a dead-looking extension is worse than a visible error
+      status.text = '$(warning) PTAL';
+      status.tooltip = `PTAL error: ${statusError}\nClick to retry.`;
+      status.command = 'ptal.refresh';
+      status.show();
+      return;
+    }
+    status.command = 'ptal.nextUnresolved';
     if (!statusBase) {
       status.hide();
       return;
@@ -50,24 +74,23 @@ export function activate(context: vscode.ExtensionContext) {
       if (!set) {
         ui.clear();
         statusBase = null;
+        statusError = null;
         updateStatus();
         out.appendLine('no open PR for the current branch');
         return;
       }
 
-      const mapped: MappedThread[] = await Promise.all(
-        set.threads.map(async (thread) => ({
-          thread,
-          anchor: await mapAnchor({
-            cwd: root,
-            path: thread.path,
-            anchorSha: thread.anchorSha,
-            anchorLine: thread.anchorLine,
-            anchorStartLine: thread.anchorStartLine,
-            snippet: thread.comments[0]?.snippet ?? '',
-          }),
-        })),
-      );
+      const mapped: MappedThread[] = await mapLimit(set.threads, 8, async (thread) => ({
+        thread,
+        anchor: await mapAnchor({
+          cwd: root,
+          path: thread.path,
+          anchorSha: thread.anchorSha,
+          anchorLine: thread.anchorLine,
+          anchorStartLine: thread.anchorStartLine,
+          snippet: thread.comments[0]?.snippet ?? '',
+        }),
+      }));
       if (gen !== refreshGen) {
         return; // superseded while mapping
       }
@@ -78,6 +101,7 @@ export function activate(context: vscode.ExtensionContext) {
       if (gen !== refreshGen) {
         return;
       }
+      statusError = null;
       statusBase = { label: set.label, title: set.title, behind };
       updateStatus();
       if (behind) {
@@ -101,6 +125,10 @@ export function activate(context: vscode.ExtensionContext) {
       }
     } catch (e) {
       out.appendLine(`error: ${e instanceof Error ? e.message : String(e)}`);
+      if (gen === refreshGen) {
+        statusError = e instanceof Error ? e.message : String(e);
+        updateStatus();
+      }
     }
   };
 

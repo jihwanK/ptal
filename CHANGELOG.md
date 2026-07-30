@@ -5,6 +5,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Errors (auth, network, git) now surface in the status bar with click-to-retry instead of hiding in the output channel
+- Threads with more than 50 comments load fully instead of being silently truncated
+- Position mapping on large PRs no longer spawns one git process per thread at once (bounded to 8)
+
 ### Added
 
 - Inline review threads mapped to the current working tree (3-stage fallback: diff arithmetic → content matching → honest failure)
