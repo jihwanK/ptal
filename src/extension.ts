@@ -27,7 +27,11 @@ export function activate(context: vscode.ExtensionContext) {
   ui.setShowResolved(context.workspaceState.get<boolean>('ptal.showResolved', true));
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   status.command = 'ptal.nextUnresolved';
-  context.subscriptions.push(out, ui, status);
+  const refreshBtn = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
+  refreshBtn.text = '$(refresh)';
+  refreshBtn.tooltip = 'PTAL: Refresh review comments';
+  refreshBtn.command = 'ptal.refresh';
+  context.subscriptions.push(out, ui, status, refreshBtn);
 
   let statusBase: { label: string; title: string; behind: boolean } | null = null;
   let statusError: string | null = null;
@@ -39,11 +43,13 @@ export function activate(context: vscode.ExtensionContext) {
       status.tooltip = `PTAL error: ${statusError}\nClick to retry.`;
       status.command = 'ptal.refresh';
       status.show();
+      refreshBtn.show();
       return;
     }
     status.command = 'ptal.nextUnresolved';
     if (!statusBase) {
       status.hide();
+      refreshBtn.hide();
       return;
     }
     const { unresolved, total } = ui.counts();
@@ -53,6 +59,7 @@ export function activate(context: vscode.ExtensionContext) {
       status.tooltip += '\n⚠ Local checkout is behind the PR head — run git pull for accurate positions.';
     }
     status.show();
+    refreshBtn.show();
   };
 
   // stale-refresh guard: branch watcher, manual refresh, and activation can
@@ -197,6 +204,18 @@ export function activate(context: vscode.ExtensionContext) {
         updateStatus();
       } catch (e) {
         void vscode.window.showErrorMessage(`PTAL: unresolve failed (${msg(e)})`);
+      }
+    }),
+  );
+
+  // refresh once when the window regains focus (reviews land while you're in the
+  // browser) — throttled hard so alt-tabbing never turns into polling
+  let lastFocusRefresh = Date.now();
+  context.subscriptions.push(
+    vscode.window.onDidChangeWindowState((e) => {
+      if (e.focused && Date.now() - lastFocusRefresh > 30_000) {
+        lastFocusRefresh = Date.now();
+        void refresh();
       }
     }),
   );
