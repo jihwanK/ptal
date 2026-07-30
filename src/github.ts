@@ -97,6 +97,7 @@ query($owner: String!, $repo: String!, $branch: String!, $cursor: String) {
             isResolved
             isOutdated
             comments(first: 50) {
+              pageInfo { hasNextPage endCursor }
               nodes {
                 id
                 body
@@ -108,6 +109,26 @@ query($owner: String!, $repo: String!, $branch: String!, $cursor: String) {
               }
             }
           }
+        }
+      }
+    }
+  }
+}`;
+
+const THREAD_COMMENTS_QUERY = `
+query($id: ID!, $cursor: String) {
+  node(id: $id) {
+    ... on PullRequestReviewThread {
+      comments(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          body
+          url
+          createdAt
+          diffHunk
+          author { login avatarUrl }
+          originalCommit { oid }
         }
       }
     }
@@ -225,6 +246,20 @@ export async function fetchReviewSet(cwd: string): Promise<ReviewSet | null> {
     const page = pr.reviewThreads?.pageInfo;
     cursor = page?.hasNextPage ? page.endCursor : null;
   } while (cursor);
+
+  // long threads: pull the comment tail so nothing is silently truncated
+  for (const t of rawThreads) {
+    let commentCursor: string | null = t.comments?.pageInfo?.hasNextPage ? t.comments.pageInfo.endCursor : null;
+    while (commentCursor) {
+      const data = await gql(accessToken, THREAD_COMMENTS_QUERY, { id: t.id, cursor: commentCursor });
+      const conn = data.node?.comments;
+      if (!conn) {
+        break;
+      }
+      t.comments.nodes.push(...(conn.nodes ?? []));
+      commentCursor = conn.pageInfo?.hasNextPage ? conn.pageInfo.endCursor : null;
+    }
+  }
 
   const headSha: string = pr.headRefOid;
   const threads = rawThreads.map((n) => {
