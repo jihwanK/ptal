@@ -1,0 +1,41 @@
+name: Release
+
+# A release IS a tag (GitHub Flow): pushing vX.Y.Z publishes that exact
+# version to the VS Code Marketplace and Open VSX, both on the pre-release
+# channel while we're in the v0.x beta.
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      # the tag is the release — it must match the packaged version exactly
+      - name: Check tag matches package.json version
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag v$TAG does not match package.json version $PKG — bump package.json (and CHANGELOG) before tagging"
+            exit 1
+          fi
+      - name: Publish to VS Code Marketplace (pre-release)
+        run: npx @vscode/vsce publish --pre-release -p "$VSCE_PAT"
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      - name: Publish to Open VSX (pre-release)
+        run: npx ovsx publish --pre-release -p "$OVSX_PAT"
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
