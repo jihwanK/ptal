@@ -39,7 +39,10 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           PR: ${{ github.event.pull_request.number }}
         run: |
-          body="<!-- ptal-vsix-preview -->📦 **vsix preview**: [download](${ARTIFACT_URL}) (build of ${HEAD_SHA:0:7})
+          # the marker must sit on its own line: a line starting with an HTML
+          # comment is an HTML block, and markdown on that line never renders
+          body="<!-- ptal-vsix-preview -->
+          📦 **vsix preview**: [download](${ARTIFACT_URL}) (build of ${HEAD_SHA:0:7})
 
           Unzip, then \`code --install-extension ptal-pr.vsix --force\` and run **Developer: Reload Window**."
           prev=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
