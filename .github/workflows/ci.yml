@@ -8,6 +8,9 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write # vsix download-link comment on PRs
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -23,6 +26,26 @@ jobs:
         run: npx @vscode/vsce package -o ptal-pr.vsix
       - if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v7
+        id: vsix
         with:
           name: ptal-vsix-preview
           path: ptal-pr.vsix
+      # surface the build on the PR page itself: one marker-tagged comment,
+      # updated in place on new pushes (fork PRs get a read-only token → skip)
+      - if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ARTIFACT_URL: ${{ steps.vsix.outputs.artifact-url }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          body="<!-- ptal-vsix-preview -->📦 **vsix preview**: [download](${ARTIFACT_URL}) (build of ${HEAD_SHA:0:7})
+
+          Unzip, then \`code --install-extension ptal-pr.vsix --force\` and run **Developer: Reload Window**."
+          prev=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" \
+            --jq '[.[] | select(.body | startswith("<!-- ptal-vsix-preview -->"))][0].id // empty')
+          if [ -n "$prev" ]; then
+            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${prev}" -f body="$body"
+          else
+            gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -f body="$body"
+          fi
