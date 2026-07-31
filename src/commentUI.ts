@@ -3,7 +3,7 @@
 // neutral ReviewThread + MappedAnchor data only.
 import * as vscode from 'vscode';
 import { join } from 'path';
-import { ReviewThread } from './github';
+import { ReviewComment, ReviewThread } from './github';
 import { MappedAnchor } from './lineMapper';
 
 export interface MappedThread {
@@ -147,6 +147,35 @@ export class CommentUI implements vscode.Disposable {
     }
 
     this.rebuildNavigation();
+  }
+
+  /**
+   * Optimistically append a reply to both the rendered thread and the neutral
+   * data behind it. The neutral ReviewThread is shared with lastMapped, so the
+   * reply survives cached re-renders (resolved toggle etc.) until the next real
+   * refresh replaces it with the server's copy.
+   */
+  appendComment(t: vscode.CommentThread, c: ReviewComment): void {
+    const data = this.meta.get(t);
+    if (!data) {
+      return;
+    }
+    data.comments.push(c);
+    const rendered: vscode.Comment = {
+      author: { name: c.author, iconPath: c.authorAvatar ? vscode.Uri.parse(c.authorAvatar) : undefined },
+      mode: vscode.CommentMode.Preview,
+      body: new vscode.MarkdownString(c.body),
+      timestamp: new Date(c.createdAt),
+    };
+    // the PTAL frozen-context block stays last — insert the reply before it
+    const comments = [...t.comments];
+    const ptalIdx = comments.findIndex((x) => x.author.name === 'PTAL');
+    if (ptalIdx === -1) {
+      comments.push(rendered);
+    } else {
+      comments.splice(ptalIdx, 0, rendered);
+    }
+    t.comments = comments;
   }
 
   /** Flip a thread's resolved state in place — no full refresh, no flicker. */

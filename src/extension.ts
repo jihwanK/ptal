@@ -198,17 +198,19 @@ export function activate(context: vscode.ExtensionContext) {
       }
       try {
         await replyToThread(data.id, reply.text);
-        // optimistic append: no full refresh, so the thread stays open and nothing flickers
+        // optimistic append: no full refresh, so the thread stays open and nothing
+        // flickers — goes through CommentUI so the neutral data is updated too and
+        // the reply survives cached re-renders (#22)
         const me = await viewer();
-        reply.thread.comments = [
-          ...reply.thread.comments,
-          {
-            author: { name: me.login, iconPath: me.avatarUrl ? vscode.Uri.parse(me.avatarUrl) : undefined },
-            mode: vscode.CommentMode.Preview,
-            body: new vscode.MarkdownString(reply.text),
-            timestamp: new Date(),
-          },
-        ];
+        ui.appendComment(reply.thread, {
+          id: `optimistic-${Date.now()}`,
+          author: me.login,
+          authorAvatar: me.avatarUrl,
+          body: reply.text,
+          url: data.comments[0]?.url ?? '',
+          snippet: '',
+          createdAt: new Date().toISOString(),
+        });
       } catch (e) {
         // never lose what the user wrote
         await vscode.env.clipboard.writeText(reply.text);
