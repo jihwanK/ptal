@@ -31,7 +31,10 @@ export function activate(context: vscode.ExtensionContext) {
   // for branch+sync) — a plain StatusBarItem carries exactly one command, and
   // two adjacent items render as separate blocks (#32, #34). Trade-off: an
   // empty PTAL section in the Source Control panel (may host #9's view later).
-  const scm = vscode.scm.createSourceControl('ptal', 'PTAL', vscode.workspace.workspaceFolders?.[0]?.uri);
+  // No rootUri: a rooted provider competes with git for the active-repository
+  // slot and displaces the branch indicator + flips the panel into multi-repo
+  // mode (#36). Rootless, PTAL must never win that contest.
+  const scm = vscode.scm.createSourceControl('ptal', 'PTAL');
   scm.inputBox.visible = false;
   scm.count = 0; // never contribute to the SCM activity-bar badge
   context.subscriptions.push(out, ui, scm);
