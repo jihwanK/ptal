@@ -31,6 +31,16 @@ export interface ReviewThread {
   comments: ReviewComment[];
 }
 
+/** A review-level submission (the body sent with Approve / Request Changes / Comment). */
+export interface ReviewSummary {
+  author: string;
+  authorAvatar?: string;
+  verdict: 'approved' | 'changes-requested' | 'commented' | 'dismissed';
+  body: string;
+  submittedAt: string;
+  url: string;
+}
+
 export interface ReviewSet {
   /** Display label supplied by the provider, e.g. "PR #42". */
   label: string;
@@ -40,6 +50,8 @@ export interface ReviewSet {
   /** Open PRs sharing this head branch (different bases); we show the oldest. */
   openPrCount: number;
   threads: ReviewThread[];
+  /** Chronological review-level summaries; empty-body comment shells are filtered out. */
+  summaries: ReviewSummary[];
 }
 
 /** Git repository root — file paths in review threads are relative to this. */
@@ -84,6 +96,15 @@ query($owner: String!, $repo: String!, $branch: String!, $cursor: String) {
         title
         url
         headRefOid
+        reviews(last: 20, states: [APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED]) {
+          nodes {
+            state
+            body
+            url
+            submittedAt
+            author { login avatarUrl }
+          }
+        }
         reviewThreads(first: 100, after: $cursor) {
           pageInfo { hasNextPage endCursor }
           nodes {
@@ -262,6 +283,28 @@ export async function fetchReviewSet(cwd: string): Promise<ReviewSet | null> {
   }
 
   const headSha: string = pr.headRefOid;
+  const verdictOf: Record<string, ReviewSummary['verdict']> = {
+    APPROVED: 'approved',
+    CHANGES_REQUESTED: 'changes-requested',
+    COMMENTED: 'commented',
+    DISMISSED: 'dismissed',
+  };
+  // ponytail: last 20 reviews — a PR with more re-review rounds than that is off the map
+  const summaries: ReviewSummary[] = (pr.reviews?.nodes ?? [])
+    .filter((r: any) => {
+      const verdict = verdictOf[r.state];
+      // bodyless COMMENTED/DISMISSED reviews are shells around inline comments — noise;
+      // bodyless approvals/change-requests still carry the verdict itself
+      return verdict && (r.body?.trim() || verdict === 'approved' || verdict === 'changes-requested');
+    })
+    .map((r: any) => ({
+      author: r.author?.login ?? 'unknown',
+      authorAvatar: r.author?.avatarUrl,
+      verdict: verdictOf[r.state],
+      body: r.body ?? '',
+      submittedAt: r.submittedAt ?? '',
+      url: r.url,
+    }));
   const threads = rawThreads.map((n) => {
     const t = toThread(n);
     t.anchorSha = t.isOutdated ? (n.comments?.nodes?.[0]?.originalCommit?.oid ?? headSha) : headSha;
@@ -275,5 +318,6 @@ export async function fetchReviewSet(cwd: string): Promise<ReviewSet | null> {
     headSha,
     openPrCount,
     threads,
+    summaries,
   };
 }

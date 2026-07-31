@@ -48,6 +48,10 @@
         "title": "PTAL: Actions"
       },
       {
+        "command": "ptal.reviewSummaries",
+        "title": "PTAL: Show Review Summaries"
+      },
+      {
         "command": "ptal.reply",
         "title": "Reply"
       },
