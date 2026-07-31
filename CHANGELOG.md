@@ -17,6 +17,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- PR-level review summaries (the body sent with Approve / Request Changes — where AI reviewers like Codex put their main findings) readable in a markdown preview, via the status-bar menu or `PTAL: Show Review Summaries`
 - Auto-refresh when the window regains focus (throttled to once per 30s) — new review comments appear when you come back from the browser
 - Status-bar refresh button next to the counter
 - `PTAL: Show/Hide Resolved Comments` — focus mode that hides resolved threads from the editor (default: shown, remembered per workspace)

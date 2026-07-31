@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
-import { fetchReviewSet, gitDir, localContains, repoRoot, replyToThread, resolveThread, unresolveThread, viewer } from './github';
+import { fetchReviewSet, gitDir, localContains, repoRoot, replyToThread, resolveThread, unresolveThread, viewer, ReviewSummary } from './github';
 import { mapAnchor } from './lineMapper';
 import { CommentUI, MappedThread } from './commentUI';
+import { summariesMarkdown } from './summaryMarkdown';
 
 function firstLine(s: string | undefined): string {
   return (s ?? '').split('\n', 1)[0].slice(0, 80);
@@ -32,6 +33,20 @@ export function activate(context: vscode.ExtensionContext) {
 
   let statusBase: { label: string; title: string; url: string; behind: boolean } | null = null;
   let statusError: string | null = null;
+  let lastSummaries: ReviewSummary[] = [];
+
+  // Review summaries live in a read-only virtual doc rendered as a markdown
+  // preview — no dirty untitled buffer, and an open preview updates on refresh.
+  const summaryUri = vscode.Uri.from({ scheme: 'ptal', path: '/Review Summaries.md' });
+  const summaryEmitter = new vscode.EventEmitter<vscode.Uri>();
+  context.subscriptions.push(
+    summaryEmitter,
+    vscode.workspace.registerTextDocumentContentProvider('ptal', {
+      onDidChange: summaryEmitter.event,
+      provideTextDocumentContent: () =>
+        summariesMarkdown(statusBase?.label ?? 'PTAL', statusBase?.title ?? 'no open PR', lastSummaries),
+    }),
+  );
 
   const updateStatus = () => {
     if (statusError) {
@@ -77,6 +92,8 @@ export function activate(context: vscode.ExtensionContext) {
         ui.clear();
         statusBase = null;
         statusError = null;
+        lastSummaries = [];
+        summaryEmitter.fire(summaryUri);
         updateStatus();
         out.appendLine('no open PR for the current branch');
         return;
@@ -105,6 +122,8 @@ export function activate(context: vscode.ExtensionContext) {
       }
       statusError = null;
       statusBase = { label: set.label, title: set.title, url: set.url, behind };
+      lastSummaries = set.summaries;
+      summaryEmitter.fire(summaryUri); // keep an already-open preview current
       updateStatus();
       if (behind) {
         out.appendLine('warning: local checkout does not contain the PR head commit — pull to map positions accurately');
@@ -143,12 +162,15 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand('ptal.nextUnresolved', () => ui.nextUnresolved()),
     vscode.commands.registerCommand('ptal.menu', async () => {
-      type Item = vscode.QuickPickItem & { action: 'next' | 'refresh' | 'toggle' | 'open' };
+      type Item = vscode.QuickPickItem & { action: 'next' | 'refresh' | 'toggle' | 'open' | 'summaries' };
       const items: Item[] = [
         { label: '$(arrow-right) Go to next unresolved comment', action: 'next' },
         { label: '$(refresh) Refresh review comments', action: 'refresh' },
         { label: `$(eye) ${ui.resolvedShown() ? 'Hide' : 'Show'} resolved comments`, action: 'toggle' },
       ];
+      if (lastSummaries.length > 0) {
+        items.splice(1, 0, { label: `$(book) Review summaries (${lastSummaries.length})`, action: 'summaries' });
+      }
       if (statusBase?.url) {
         items.push({ label: '$(link-external) Open PR on GitHub', action: 'open' });
       }
@@ -165,6 +187,9 @@ export function activate(context: vscode.ExtensionContext) {
         case 'toggle':
           await vscode.commands.executeCommand('ptal.toggleResolved');
           break;
+        case 'summaries':
+          await vscode.commands.executeCommand('ptal.reviewSummaries');
+          break;
         case 'open':
           if (statusBase?.url) {
             void vscode.env.openExternal(vscode.Uri.parse(statusBase.url));
@@ -172,6 +197,9 @@ export function activate(context: vscode.ExtensionContext) {
           break;
       }
     }),
+    vscode.commands.registerCommand('ptal.reviewSummaries', () =>
+      vscode.commands.executeCommand('markdown.showPreview', summaryUri),
+    ),
     vscode.commands.registerCommand('ptal.toggleResolved', async () => {
       const next = !ui.resolvedShown();
       ui.setShowResolved(next);
