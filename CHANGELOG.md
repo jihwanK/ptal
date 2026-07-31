@@ -7,6 +7,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Status bar is truly one block again: the ⟳ sits inside it, clicking the block refreshes directly, and the other actions (next unresolved / review summaries / show-hide resolved / open PR) are clickable links in the hover tooltip; `PTAL: Actions` stays in the command palette
 - Status bar unified into a single PTAL block; clicking opens an action menu (next unresolved / refresh / show-hide resolved / open PR on GitHub)
 
 ### Fixed
