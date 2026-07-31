@@ -11,6 +11,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- One-click refresh is back: a ⟳ button attached to the PTAL status block (like the git branch sync icon), spinning while a refresh runs
 - Manual refresh no longer forces the Output panel open — results stay in the editor, errors still surface in the status bar
 - Errors (auth, network, git) now surface in the status bar with click-to-retry instead of hiding in the output channel
 - Threads with more than 50 comments load fully instead of being silently truncated

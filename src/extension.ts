@@ -25,10 +25,17 @@ export function activate(context: vscode.ExtensionContext) {
   const out = vscode.window.createOutputChannel('PTAL');
   const ui = new CommentUI();
   ui.setShowResolved(context.workspaceState.get<boolean>('ptal.showResolved', true));
-  // one block, one identity: everything PTAL lives behind a single status item
+  // one block, one identity: everything PTAL lives behind a single status item.
+  // The refresh icon is a second item at an immediately adjacent priority — the
+  // same trick git uses for branch + sync — so it renders as part of the block
+  // (a StatusBarItem can only carry one command, so an in-text icon can't click).
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   status.command = 'ptal.menu';
-  context.subscriptions.push(out, ui, status);
+  const refreshItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99.999);
+  refreshItem.command = 'ptal.refresh';
+  refreshItem.text = '$(sync)';
+  refreshItem.tooltip = 'PTAL: refresh review comments';
+  context.subscriptions.push(out, ui, status, refreshItem);
 
   let statusBase: { label: string; title: string; url: string; behind: boolean } | null = null;
   let statusError: string | null = null;
@@ -40,11 +47,13 @@ export function activate(context: vscode.ExtensionContext) {
       status.tooltip = `PTAL error: ${statusError}\nClick to retry.`;
       status.command = 'ptal.refresh';
       status.show();
+      refreshItem.show();
       return;
     }
     status.command = 'ptal.menu';
     if (!statusBase) {
       status.hide();
+      refreshItem.hide();
       return;
     }
     const { unresolved, total } = ui.counts();
@@ -54,6 +63,7 @@ export function activate(context: vscode.ExtensionContext) {
       status.tooltip += '\n⚠ Local checkout is behind the PR head — run git pull for accurate positions.';
     }
     status.show();
+    refreshItem.show();
   };
 
   // stale-refresh guard: branch watcher, manual refresh, and activation can
@@ -67,6 +77,7 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
     out.appendLine(`[${new Date().toLocaleTimeString()}] refreshing…`);
+    refreshItem.text = '$(sync~spin)';
     try {
       const root = await repoRoot(folder.uri.fsPath);
       const set = await fetchReviewSet(root);
@@ -130,6 +141,10 @@ export function activate(context: vscode.ExtensionContext) {
       if (gen === refreshGen) {
         statusError = e instanceof Error ? e.message : String(e);
         updateStatus();
+      }
+    } finally {
+      if (gen === refreshGen) {
+        refreshItem.text = '$(sync)'; // a superseding refresh owns the spinner now
       }
     }
   };
