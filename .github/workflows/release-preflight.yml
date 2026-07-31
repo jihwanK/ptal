@@ -1,0 +1,29 @@
+name: Release Preflight
+
+# Manual check that both publishing tokens work BEFORE a real tag depends on
+# them, and one-time setup of the Open VSX namespace. Run from the Actions tab.
+on: workflow_dispatch
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+      - name: Verify VS Code Marketplace PAT
+        run: npx @vscode/vsce verify-pat jihwank -p "$VSCE_PAT"
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      - name: Ensure Open VSX namespace exists
+        # idempotent-ish: creation fails harmlessly if the namespace exists;
+        # real auth problems are caught by the verify step below
+        run: npx ovsx create-namespace jihwank -p "$OVSX_PAT" || echo "namespace already exists — continuing"
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+      - name: Verify Open VSX PAT
+        run: npx ovsx verify-pat jihwank -p "$OVSX_PAT"
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
