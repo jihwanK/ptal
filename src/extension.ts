@@ -26,14 +26,15 @@ export function activate(context: vscode.ExtensionContext) {
   const out = vscode.window.createOutputChannel('PTAL');
   const ui = new CommentUI();
   ui.setShowResolved(context.workspaceState.get<boolean>('ptal.showResolved', true));
-  // one block, one identity: a single status item with the ⟳ inside its text.
-  // Click = refresh (the highest-frequency action, one click); everything else
-  // lives in the hover tooltip as command links. Two adjacent items can't fake
-  // this — the compound git branch+sync block is SCM-only rendering, and plain
-  // StatusBarItems always get their own hover background and gap (#32).
-  const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-  status.command = 'ptal.refresh';
-  context.subscriptions.push(out, ui, status);
+  // one block, two click targets: [PR #N: x/y]=menu, [⟳]=refresh. Only SCM
+  // statusBarCommands get VS Code's compound-block rendering (what git uses
+  // for branch+sync) — a plain StatusBarItem carries exactly one command, and
+  // two adjacent items render as separate blocks (#32, #34). Trade-off: an
+  // empty PTAL section in the Source Control panel (may host #9's view later).
+  const scm = vscode.scm.createSourceControl('ptal', 'PTAL', vscode.workspace.workspaceFolders?.[0]?.uri);
+  scm.inputBox.visible = false;
+  scm.count = 0; // never contribute to the SCM activity-bar badge
+  context.subscriptions.push(out, ui, scm);
 
   let statusBase: { label: string; title: string; url: string; behind: boolean } | null = null;
   let statusError: string | null = null;
@@ -57,35 +58,32 @@ export function activate(context: vscode.ExtensionContext) {
     const sync = refreshing ? '$(sync~spin)' : '$(sync)';
     if (statusError) {
       // a dead-looking extension is worse than a visible error
-      status.text = '$(warning) PTAL';
-      status.tooltip = `PTAL error: ${statusError}\nClick to retry.`;
-      status.show();
+      scm.statusBarCommands = [
+        {
+          command: 'ptal.refresh',
+          title: '$(warning) PTAL',
+          tooltip: `PTAL error: ${statusError}\nClick to retry.`,
+        },
+      ];
       return;
     }
     if (!statusBase) {
-      status.hide();
+      scm.statusBarCommands = [];
       return;
     }
     const { unresolved, total } = ui.counts();
-    status.text = `${statusBase.behind ? '$(warning) ' : ''}$(comment-discussion) ${statusBase.label}: ${unresolved}/${total} ${sync}`;
-    const md = new vscode.MarkdownString(undefined, true);
-    md.isTrusted = { enabledCommands: ['ptal.nextUnresolved', 'ptal.reviewSummaries', 'ptal.toggleResolved'] };
-    md.appendMarkdown(`**${statusBase.label} — ${statusBase.title}**\n\n`);
-    md.appendMarkdown(`${unresolved} unresolved of ${total} — click to refresh\n\n`);
+    let tooltip = `${statusBase.title}\n${unresolved} unresolved review comment(s) — click for actions`;
     if (statusBase.behind) {
-      md.appendMarkdown('⚠ Local checkout is behind the PR head — run git pull for accurate positions\n\n');
+      tooltip += '\n⚠ Local checkout is behind the PR head — run git pull for accurate positions.';
     }
-    const links = [
-      '[$(arrow-right) Next unresolved](command:ptal.nextUnresolved)',
-      ...(lastSummaries.length > 0
-        ? [`[$(book) Review summaries (${lastSummaries.length})](command:ptal.reviewSummaries)`]
-        : []),
-      `[$(eye) ${ui.resolvedShown() ? 'Hide' : 'Show'} resolved](command:ptal.toggleResolved)`,
-      `[$(link-external) Open PR](${statusBase.url})`,
+    scm.statusBarCommands = [
+      {
+        command: 'ptal.menu',
+        title: `${statusBase.behind ? '$(warning) ' : ''}$(comment-discussion) ${statusBase.label}: ${unresolved}/${total}`,
+        tooltip,
+      },
+      { command: 'ptal.refresh', title: sync, tooltip: 'PTAL: refresh review comments' },
     ];
-    md.appendMarkdown(`---\n\n${links.join(' · ')}`);
-    status.tooltip = md;
-    status.show();
   };
 
   // stale-refresh guard: branch watcher, manual refresh, and activation can
