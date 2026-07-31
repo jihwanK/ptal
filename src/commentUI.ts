@@ -106,16 +106,24 @@ export class CommentUI implements vscode.Disposable {
             : anchor.confidence === 'approx'
               ? 'The code changed here since the review — position is approximate.'
               : 'Position was recovered by content matching — double-check it.';
+        // full context without the browser: diff the review-time file version
+        // against the working tree (#3)
+        const diffArgs = encodeURIComponent(
+          JSON.stringify([{ path: thread.path, sha: thread.anchorSha, line: thread.anchorLine }]),
+        );
+        const body = new vscode.MarkdownString(
+          `**Code as the reviewer saw it** — ${why}\n` +
+            '```diff\n' +
+            snippetTail(thread.comments[0].snippet, 4) +
+            '\n```\n' +
+            `[Open review-time diff](command:ptal.openReviewDiff?${diffArgs}) · ` +
+            `[Open this comment on GitHub](${thread.comments[0].url})`,
+        );
+        body.isTrusted = { enabledCommands: ['ptal.openReviewDiff'] };
         comments.push({
           author: { name: 'PTAL' },
           mode: vscode.CommentMode.Preview,
-          body: new vscode.MarkdownString(
-            `**Code as the reviewer saw it** — ${why}\n` +
-              '```diff\n' +
-              snippetTail(thread.comments[0].snippet, 4) +
-              '\n```\n' +
-              `[Open this comment on GitHub](${thread.comments[0].url})`,
-          ),
+          body,
         });
       }
 

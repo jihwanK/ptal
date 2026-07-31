@@ -19,6 +19,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- "Open review-time diff" link on degraded threads — when a comment's position is approximate or lost, one click diffs the review-time file version against your working tree, no browser needed
 - PR-level review summaries (the body sent with Approve / Request Changes — where AI reviewers like Codex put their main findings) readable in a markdown preview, via the status-bar menu or `PTAL: Show Review Summaries`
 - Auto-refresh when the window regains focus (throttled to once per 30s) — new review comments appear when you come back from the browser
 - Status-bar refresh button next to the counter
