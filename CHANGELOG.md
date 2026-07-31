@@ -11,6 +11,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Manual refresh no longer forces the Output panel open — results stay in the editor, errors still surface in the status bar
 - Errors (auth, network, git) now surface in the status bar with click-to-retry instead of hiding in the output channel
 - Threads with more than 50 comments load fully instead of being silently truncated
 - Position mapping on large PRs no longer spawns one git process per thread at once (bounded to 8)

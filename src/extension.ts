@@ -137,10 +137,7 @@ export function activate(context: vscode.ExtensionContext) {
   const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('ptal.refresh', async () => {
-      out.show(true);
-      await refresh();
-    }),
+    vscode.commands.registerCommand('ptal.refresh', () => refresh()),
     vscode.commands.registerCommand('ptal.nextUnresolved', () => ui.nextUnresolved()),
     vscode.commands.registerCommand('ptal.menu', async () => {
       type Item = vscode.QuickPickItem & { action: 'next' | 'refresh' | 'toggle' | 'open' };
