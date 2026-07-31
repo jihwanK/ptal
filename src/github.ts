@@ -82,26 +82,67 @@ export async function localContains(cwd: string, sha: string): Promise<boolean> 
   }
 }
 
-export async function detectRepo(cwd: string): Promise<{ owner: string; repo: string; branch: string }> {
-  const { stdout: url } = await exec('git', ['remote', 'get-url', 'origin'], { cwd });
-  const m = url.trim().match(/github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/);
-  if (!m) {
-    throw new Error(`origin is not a github.com remote: ${url.trim()}`);
+async function remoteRepo(cwd: string, remote: string): Promise<{ owner: string; repo: string } | null> {
+  try {
+    const { stdout } = await exec('git', ['remote', 'get-url', remote], { cwd });
+    const m = stdout.trim().match(/github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/);
+    return m ? { owner: m[1], repo: m[2] } : null;
+  } catch {
+    return null; // remote doesn't exist
   }
-  const { stdout: branch } = await exec('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd });
-  return { owner: m[1], repo: m[2], branch: branch.trim() };
 }
 
+/** origin = where the branch was pushed; upstream (fork workflow) = where the PR may live. */
+export async function detectRepo(cwd: string): Promise<{
+  origin: { owner: string; repo: string };
+  upstream: { owner: string; repo: string } | null;
+  branch: string;
+}> {
+  const origin = await remoteRepo(cwd, 'origin');
+  if (!origin) {
+    throw new Error('origin is missing or not a github.com remote');
+  }
+  const upstream = await remoteRepo(cwd, 'upstream');
+  const { stdout: branch } = await exec('git', ['rev-parse', '--abbrev-ref', 'HEAD'], { cwd });
+  return { origin, upstream, branch: branch.trim() };
+}
+
+const THREAD_FIELDS = `
+nodes {
+  id
+  path
+  line
+  originalLine
+  startLine
+  originalStartLine
+  diffSide
+  isResolved
+  isOutdated
+  comments(first: 50) {
+    pageInfo { hasNextPage endCursor }
+    nodes {
+      id
+      body
+      url
+      createdAt
+      diffHunk
+      author { login avatarUrl }
+      originalCommit { oid }
+    }
+  }
+}`;
+
 const THREADS_QUERY = `
-query($owner: String!, $repo: String!, $branch: String!, $cursor: String) {
+query($owner: String!, $repo: String!, $branch: String!, $first: Int!) {
   repository(owner: $owner, name: $repo) {
-    pullRequests(headRefName: $branch, states: OPEN, first: 1) {
+    pullRequests(headRefName: $branch, states: OPEN, first: $first) {
       totalCount
       nodes {
         number
         title
         url
         headRefOid
+        headRepositoryOwner { login }
         reviews(last: 20, states: [APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED]) {
           nodes {
             state
@@ -111,32 +152,23 @@ query($owner: String!, $repo: String!, $branch: String!, $cursor: String) {
             author { login avatarUrl }
           }
         }
-        reviewThreads(first: 100, after: $cursor) {
+        reviewThreads(first: 100) {
           pageInfo { hasNextPage endCursor }
-          nodes {
-            id
-            path
-            line
-            originalLine
-            startLine
-            originalStartLine
-            diffSide
-            isResolved
-            isOutdated
-            comments(first: 50) {
-              pageInfo { hasNextPage endCursor }
-              nodes {
-                id
-                body
-                url
-                createdAt
-                diffHunk
-                author { login avatarUrl }
-                originalCommit { oid }
-              }
-            }
-          }
+          ${THREAD_FIELDS}
         }
+      }
+    }
+  }
+}`;
+
+// tail pages of a chosen PR's threads — by number, so fork-filtered picks paginate correctly
+const PR_THREADS_QUERY = `
+query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+  repository(owner: $owner, name: $repo) {
+    pullRequest(number: $number) {
+      reviewThreads(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
+        ${THREAD_FIELDS}
       }
     }
   }
@@ -255,24 +287,53 @@ function toThread(node: any): ReviewThread {
 
 /** Fetch the open PR for the current branch and all its review threads. Null when no PR. */
 export async function fetchReviewSet(cwd: string): Promise<ReviewSet | null> {
-  const { owner, repo, branch } = await detectRepo(cwd);
+  const { origin, upstream, branch } = await detectRepo(cwd);
   const accessToken = await token();
 
-  let pr: any = null;
-  let openPrCount = 0;
-  const rawThreads: any[] = [];
-  let cursor: string | null = null;
-  do {
-    const data = await gql(accessToken, THREADS_QUERY, { owner, repo, branch, cursor });
-    pr = data.repository?.pullRequests?.nodes?.[0];
-    openPrCount = data.repository?.pullRequests?.totalCount ?? 0;
-    if (!pr) {
-      return null;
+  // where the PR lives: origin first; the fork workflow falls back to upstream,
+  // filtered to PRs whose head actually lives in our fork — branch names alone
+  // collide across forks. The fallback costs one extra query and is the only
+  // exception to refresh = one query.
+  const findPr = async (owner: string, repo: string, first: number, headOwner: string | null) => {
+    const data = await gql(accessToken, THREADS_QUERY, { owner, repo, branch, first });
+    const conn = data.repository?.pullRequests;
+    let nodes: any[] = conn?.nodes ?? [];
+    if (headOwner) {
+      nodes = nodes.filter((n) => n.headRepositoryOwner?.login === headOwner);
     }
-    rawThreads.push(...(pr.reviewThreads?.nodes ?? []));
-    const page = pr.reviewThreads?.pageInfo;
-    cursor = page?.hasNextPage ? page.endCursor : null;
-  } while (cursor);
+    return { pr: nodes[0] ?? null, count: headOwner ? nodes.length : (conn?.totalCount ?? 0) };
+  };
+
+  let prOwner = origin.owner;
+  let prRepo = origin.repo;
+  let { pr, count: openPrCount } = await findPr(origin.owner, origin.repo, 1, null);
+  if (!pr && upstream && (upstream.owner !== origin.owner || upstream.repo !== origin.repo)) {
+    prOwner = upstream.owner;
+    prRepo = upstream.repo;
+    ({ pr, count: openPrCount } = await findPr(upstream.owner, upstream.repo, 10, origin.owner));
+  }
+  if (!pr) {
+    return null;
+  }
+
+  const rawThreads: any[] = [...(pr.reviewThreads?.nodes ?? [])];
+  let cursor: string | null = pr.reviewThreads?.pageInfo?.hasNextPage
+    ? pr.reviewThreads.pageInfo.endCursor
+    : null;
+  while (cursor) {
+    const data = await gql(accessToken, PR_THREADS_QUERY, {
+      owner: prOwner,
+      repo: prRepo,
+      number: pr.number,
+      cursor,
+    });
+    const conn = data.repository?.pullRequest?.reviewThreads;
+    if (!conn) {
+      break;
+    }
+    rawThreads.push(...(conn.nodes ?? []));
+    cursor = conn.pageInfo?.hasNextPage ? conn.pageInfo.endCursor : null;
+  }
 
   // long threads: pull the comment tail so nothing is silently truncated
   for (const t of rawThreads) {
