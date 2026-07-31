@@ -26,21 +26,19 @@ export function activate(context: vscode.ExtensionContext) {
   const out = vscode.window.createOutputChannel('PTAL');
   const ui = new CommentUI();
   ui.setShowResolved(context.workspaceState.get<boolean>('ptal.showResolved', true));
-  // one block, one identity: everything PTAL lives behind a single status item.
-  // The refresh icon is a second item at an immediately adjacent priority — the
-  // same trick git uses for branch + sync — so it renders as part of the block
-  // (a StatusBarItem can only carry one command, so an in-text icon can't click).
+  // one block, one identity: a single status item with the ⟳ inside its text.
+  // Click = refresh (the highest-frequency action, one click); everything else
+  // lives in the hover tooltip as command links. Two adjacent items can't fake
+  // this — the compound git branch+sync block is SCM-only rendering, and plain
+  // StatusBarItems always get their own hover background and gap (#32).
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
-  status.command = 'ptal.menu';
-  const refreshItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99.999);
-  refreshItem.command = 'ptal.refresh';
-  refreshItem.text = '$(sync)';
-  refreshItem.tooltip = 'PTAL: refresh review comments';
-  context.subscriptions.push(out, ui, status, refreshItem);
+  status.command = 'ptal.refresh';
+  context.subscriptions.push(out, ui, status);
 
   let statusBase: { label: string; title: string; url: string; behind: boolean } | null = null;
   let statusError: string | null = null;
   let lastSummaries: ReviewSummary[] = [];
+  let refreshing = false;
 
   // Review summaries live in a read-only virtual doc rendered as a markdown
   // preview — no dirty untitled buffer, and an open preview updates on refresh.
@@ -56,29 +54,38 @@ export function activate(context: vscode.ExtensionContext) {
   );
 
   const updateStatus = () => {
+    const sync = refreshing ? '$(sync~spin)' : '$(sync)';
     if (statusError) {
       // a dead-looking extension is worse than a visible error
       status.text = '$(warning) PTAL';
       status.tooltip = `PTAL error: ${statusError}\nClick to retry.`;
-      status.command = 'ptal.refresh';
       status.show();
-      refreshItem.show();
       return;
     }
-    status.command = 'ptal.menu';
     if (!statusBase) {
       status.hide();
-      refreshItem.hide();
       return;
     }
     const { unresolved, total } = ui.counts();
-    status.text = `${statusBase.behind ? '$(warning) ' : ''}$(comment-discussion) ${statusBase.label}: ${unresolved}/${total}`;
-    status.tooltip = `${statusBase.title}\n${unresolved} unresolved review comment(s) — click for actions`;
+    status.text = `${statusBase.behind ? '$(warning) ' : ''}$(comment-discussion) ${statusBase.label}: ${unresolved}/${total} ${sync}`;
+    const md = new vscode.MarkdownString(undefined, true);
+    md.isTrusted = { enabledCommands: ['ptal.nextUnresolved', 'ptal.reviewSummaries', 'ptal.toggleResolved'] };
+    md.appendMarkdown(`**${statusBase.label} — ${statusBase.title}**\n\n`);
+    md.appendMarkdown(`${unresolved} unresolved of ${total} — click to refresh\n\n`);
     if (statusBase.behind) {
-      status.tooltip += '\n⚠ Local checkout is behind the PR head — run git pull for accurate positions.';
+      md.appendMarkdown('⚠ Local checkout is behind the PR head — run git pull for accurate positions\n\n');
     }
+    const links = [
+      '[$(arrow-right) Next unresolved](command:ptal.nextUnresolved)',
+      ...(lastSummaries.length > 0
+        ? [`[$(book) Review summaries (${lastSummaries.length})](command:ptal.reviewSummaries)`]
+        : []),
+      `[$(eye) ${ui.resolvedShown() ? 'Hide' : 'Show'} resolved](command:ptal.toggleResolved)`,
+      `[$(link-external) Open PR](${statusBase.url})`,
+    ];
+    md.appendMarkdown(`---\n\n${links.join(' · ')}`);
+    status.tooltip = md;
     status.show();
-    refreshItem.show();
   };
 
   // stale-refresh guard: branch watcher, manual refresh, and activation can
@@ -92,7 +99,8 @@ export function activate(context: vscode.ExtensionContext) {
       return;
     }
     out.appendLine(`[${new Date().toLocaleTimeString()}] refreshing…`);
-    refreshItem.text = '$(sync~spin)';
+    refreshing = true;
+    updateStatus();
     try {
       const root = await repoRoot(folder.uri.fsPath);
       const set = await fetchReviewSet(root);
@@ -163,7 +171,8 @@ export function activate(context: vscode.ExtensionContext) {
       }
     } finally {
       if (gen === refreshGen) {
-        refreshItem.text = '$(sync)'; // a superseding refresh owns the spinner now
+        refreshing = false; // a superseding refresh owns the spinner now
+        updateStatus();
       }
     }
   };
