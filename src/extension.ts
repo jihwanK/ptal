@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
-import { fetchReviewSet, gitDir, localContains, repoRoot, replyToThread, resolveThread, unresolveThread, viewer, ReviewSummary } from './github';
+import { join } from 'path';
+import { fetchReviewSet, fileAtRevision, gitDir, localContains, repoRoot, replyToThread, resolveThread, unresolveThread, viewer, ReviewSummary } from './github';
 import { mapAnchor } from './lineMapper';
 import { CommentUI, MappedThread } from './commentUI';
 import { summariesMarkdown } from './summaryMarkdown';
@@ -49,6 +50,14 @@ export function activate(context: vscode.ExtensionContext) {
       onDidChange: summaryEmitter.event,
       provideTextDocumentContent: () =>
         summariesMarkdown(statusBase?.label ?? 'PTAL', statusBase?.title ?? 'no open PR', lastSummaries),
+    }),
+    // review-time file versions for diff views — uri.path names the tab,
+    // uri.query carries what git needs
+    vscode.workspace.registerTextDocumentContentProvider('ptal-rev', {
+      provideTextDocumentContent: (uri) => {
+        const { cwd, sha, path } = JSON.parse(uri.query) as { cwd: string; sha: string; path: string };
+        return fileAtRevision(cwd, sha, path);
+      },
     }),
   );
 
@@ -209,6 +218,39 @@ export function activate(context: vscode.ExtensionContext) {
     }),
     vscode.commands.registerCommand('ptal.reviewSummaries', () =>
       vscode.commands.executeCommand('markdown.showPreview', summaryUri),
+    ),
+    // full review-time context without the browser: review-time version ↔ working tree
+    vscode.commands.registerCommand(
+      'ptal.openReviewDiff',
+      async (args: { path: string; sha: string; line: number | null }) => {
+        const folder = vscode.workspace.workspaceFolders?.[0];
+        if (!folder) {
+          return;
+        }
+        try {
+          const root = await repoRoot(folder.uri.fsPath);
+          if (!(await localContains(root, args.sha))) {
+            // honest failure: the review-time commit simply isn't here yet
+            void vscode.window.showErrorMessage(
+              `PTAL: commit ${args.sha.slice(0, 7)} is not in your local history — run git fetch (or git pull) and try again.`,
+            );
+            return;
+          }
+          const left = vscode.Uri.from({
+            scheme: 'ptal-rev',
+            path: '/' + args.path,
+            query: JSON.stringify({ cwd: root, sha: args.sha, path: args.path }),
+          });
+          const right = vscode.Uri.file(join(root, args.path));
+          const title = `${args.path} (review @ ${args.sha.slice(0, 7)} ↔ working tree)`;
+          const options = args.line
+            ? { selection: new vscode.Range(args.line - 1, 0, args.line - 1, 0) }
+            : undefined;
+          await vscode.commands.executeCommand('vscode.diff', left, right, title, options);
+        } catch (e) {
+          void vscode.window.showErrorMessage(`PTAL: couldn't open the review-time diff (${msg(e)})`);
+        }
+      },
     ),
     vscode.commands.registerCommand('ptal.toggleResolved', async () => {
       const next = !ui.resolvedShown();

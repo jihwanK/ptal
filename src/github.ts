@@ -66,6 +66,12 @@ export async function gitDir(cwd: string): Promise<string> {
   return stdout.trim();
 }
 
+/** File content as of `sha` — the review-time version, for diff views. */
+export async function fileAtRevision(cwd: string, sha: string, path: string): Promise<string> {
+  const { stdout } = await exec('git', ['show', `${sha}:${path}`], { cwd, maxBuffer: 10 * 1024 * 1024 });
+  return stdout;
+}
+
 /** True when `sha` is part of local history (i.e. the checkout is not behind it). */
 export async function localContains(cwd: string, sha: string): Promise<boolean> {
   try {
