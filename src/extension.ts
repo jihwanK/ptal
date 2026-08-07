@@ -4,6 +4,7 @@ import { fetchReviewSet, fileAtRevision, gitDir, localContains, repoRoot, replyT
 import { mapAnchor } from './lineMapper';
 import { CommentUI, MappedThread } from './commentUI';
 import { summariesMarkdown } from './summaryMarkdown';
+import { ThreadsView } from './threadsView';
 
 function firstLine(s: string | undefined): string {
   return (s ?? '').split('\n', 1)[0].slice(0, 80);
@@ -33,7 +34,11 @@ export function activate(context: vscode.ExtensionContext) {
   // app, not a git appendage; #9 will give it a dedicated view instead.
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   status.command = 'ptal.menu';
-  context.subscriptions.push(out, ui, status);
+  // sidebar identity (#9): PTAL's own activity-bar view, fed from the same
+  // mapped data as the editor rendering — no extra queries
+  const threadsView = new ThreadsView();
+  const tree = vscode.window.createTreeView('ptalThreads', { treeDataProvider: threadsView });
+  context.subscriptions.push(out, ui, status, tree);
 
   let statusBase: { label: string; title: string; url: string; behind: boolean } | null = null;
   let statusError: string | null = null;
@@ -73,6 +78,8 @@ export function activate(context: vscode.ExtensionContext) {
     status.command = 'ptal.menu';
     if (!statusBase) {
       status.hide();
+      tree.badge = undefined;
+      tree.description = undefined;
       return;
     }
     const { unresolved, total } = ui.counts();
@@ -84,6 +91,11 @@ export function activate(context: vscode.ExtensionContext) {
       status.tooltip += '\n⚠ Local checkout is behind the PR head — run git pull for accurate positions.';
     }
     status.show();
+    tree.description = `${statusBase.label} — ${statusBase.title}`;
+    tree.badge =
+      unresolved > 0
+        ? { value: unresolved, tooltip: `${unresolved} unresolved review comment(s)` }
+        : undefined;
   };
 
   // stale-refresh guard: branch watcher, manual refresh, and activation can
@@ -110,6 +122,7 @@ export function activate(context: vscode.ExtensionContext) {
         statusBase = null;
         statusError = null;
         lastSummaries = [];
+        threadsView.setData(null, []);
         summaryEmitter.fire(summaryUri);
         updateStatus();
         out.appendLine('no open PR for the current branch');
@@ -131,6 +144,7 @@ export function activate(context: vscode.ExtensionContext) {
         return; // superseded while mapping
       }
       ui.render(root, mapped);
+      threadsView.setData(root, mapped);
 
       const unresolved = mapped.filter((m) => !m.thread.isResolved).length;
       const behind = !(await localContains(root, set.headSha));
@@ -180,6 +194,14 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('ptal.refresh', () => refresh()),
     vscode.commands.registerCommand('ptal.nextUnresolved', () => ui.nextUnresolved()),
+    // sidebar tree → editor jump
+    vscode.commands.registerCommand('ptal.openLocation', async (uri: vscode.Uri, line: number) => {
+      const doc = await vscode.workspace.openTextDocument(uri);
+      const editor = await vscode.window.showTextDocument(doc);
+      const pos = new vscode.Position(Math.max(0, Math.min(line - 1, doc.lineCount - 1)), 0);
+      editor.selection = new vscode.Selection(pos, pos);
+      editor.revealRange(new vscode.Range(pos, pos), vscode.TextEditorRevealType.InCenter);
+    }),
     vscode.commands.registerCommand('ptal.menu', async () => {
       type Item = vscode.QuickPickItem & { action: 'next' | 'refresh' | 'toggle' | 'open' | 'summaries' };
       const items: Item[] = [
@@ -294,6 +316,7 @@ export function activate(context: vscode.ExtensionContext) {
         await resolveThread(data.id);
         // optimistic: collapse in place, drop from navigation/highlights, no flicker
         ui.setResolved(thread, true);
+        threadsView.poke();
         updateStatus();
       } catch (e) {
         void vscode.window.showErrorMessage(`PTAL: resolve failed (${msg(e)})`);
@@ -307,6 +330,7 @@ export function activate(context: vscode.ExtensionContext) {
       try {
         await unresolveThread(data.id);
         ui.setResolved(thread, false);
+        threadsView.poke();
         updateStatus();
       } catch (e) {
         void vscode.window.showErrorMessage(`PTAL: unresolve failed (${msg(e)})`);
