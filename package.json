@@ -52,6 +52,10 @@
         "title": "PTAL: Show Review Summaries"
       },
       {
+        "command": "ptal.switchPr",
+        "title": "PTAL: Switch Pull Request"
+      },
+      {
         "command": "ptal.reply",
         "title": "Reply"
       },

@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { join } from 'path';
-import { fetchReviewSet, fileAtRevision, gitDir, localContains, repoRoot, replyToThread, resolveThread, unresolveThread, viewer, ReviewSummary } from './github';
+import { fetchReviewSet, fileAtRevision, gitDir, localContains, repoRoot, replyToThread, resolveThread, unresolveThread, viewer, ReviewSet, ReviewSummary } from './github';
 import { mapAnchor } from './lineMapper';
 import { CommentUI, MappedThread } from './commentUI';
 import { summariesMarkdown } from './summaryMarkdown';
@@ -38,6 +38,9 @@ export function activate(context: vscode.ExtensionContext) {
   let statusBase: { label: string; title: string; url: string; behind: boolean } | null = null;
   let statusError: string | null = null;
   let lastSummaries: ReviewSummary[] = [];
+  let lastCandidates: ReviewSet['candidates'] = [];
+  let lastBranch: string | null = null;
+  const prChoices = () => context.workspaceState.get<Record<string, number>>('ptal.prChoice', {});
   let refreshing = false;
 
   // Review summaries live in a read-only virtual doc rendered as a markdown
@@ -101,7 +104,7 @@ export function activate(context: vscode.ExtensionContext) {
     updateStatus();
     try {
       const root = await repoRoot(folder.uri.fsPath);
-      const set = await fetchReviewSet(root);
+      const set = await fetchReviewSet(root, prChoices());
       if (gen !== refreshGen) {
         return; // superseded by a newer refresh
       }
@@ -110,6 +113,8 @@ export function activate(context: vscode.ExtensionContext) {
         statusBase = null;
         statusError = null;
         lastSummaries = [];
+        lastCandidates = [];
+        lastBranch = null;
         summaryEmitter.fire(summaryUri);
         updateStatus();
         out.appendLine('no open PR for the current branch');
@@ -140,6 +145,8 @@ export function activate(context: vscode.ExtensionContext) {
       statusError = null;
       statusBase = { label: set.label, title: set.title, url: set.url, behind };
       lastSummaries = set.summaries;
+      lastCandidates = set.candidates;
+      lastBranch = set.branch;
       summaryEmitter.fire(summaryUri); // keep an already-open preview current
       updateStatus();
       if (behind) {
@@ -147,8 +154,13 @@ export function activate(context: vscode.ExtensionContext) {
       }
       if (set.openPrCount > 1) {
         // same head branch, different bases (e.g. backport PRs) — never hide that we picked one
-        out.appendLine(`warning: ${set.openPrCount} open PRs share this branch — showing the oldest (${set.label}); PR selection is on the backlog`);
-        void vscode.window.showWarningMessage(`PTAL: this branch has ${set.openPrCount} open PRs — showing ${set.label}.`);
+        out.appendLine(`warning: ${set.openPrCount} open PRs share this branch — showing ${set.label}`);
+        if (prChoices()[set.branch] === undefined) {
+          // only nag until the user has made a choice for this branch
+          void vscode.window
+            .showWarningMessage(`PTAL: this branch has ${set.openPrCount} open PRs — showing ${set.label}.`, 'Choose PR…')
+            .then((pick) => pick && vscode.commands.executeCommand('ptal.switchPr'));
+        }
       }
 
       out.appendLine(`${set.label} "${set.title}" — threads: ${mapped.length} (unresolved: ${unresolved})`);
@@ -181,7 +193,7 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('ptal.refresh', () => refresh()),
     vscode.commands.registerCommand('ptal.nextUnresolved', () => ui.nextUnresolved()),
     vscode.commands.registerCommand('ptal.menu', async () => {
-      type Item = vscode.QuickPickItem & { action: 'next' | 'refresh' | 'toggle' | 'open' | 'summaries' };
+      type Item = vscode.QuickPickItem & { action: 'next' | 'refresh' | 'toggle' | 'open' | 'summaries' | 'switch' };
       const items: Item[] = [
         { label: '$(arrow-right) Go to next unresolved comment', action: 'next' },
         { label: '$(refresh) Refresh review comments', action: 'refresh' },
@@ -189,6 +201,9 @@ export function activate(context: vscode.ExtensionContext) {
       ];
       if (lastSummaries.length > 0) {
         items.splice(1, 0, { label: `$(book) Review summaries (${lastSummaries.length})`, action: 'summaries' });
+      }
+      if (lastCandidates.length > 1) {
+        items.push({ label: `$(git-pull-request) Switch PR (${lastCandidates.length} open on this branch)`, action: 'switch' });
       }
       if (statusBase?.url) {
         items.push({ label: '$(link-external) Open PR on GitHub', action: 'open' });
@@ -209,6 +224,9 @@ export function activate(context: vscode.ExtensionContext) {
         case 'summaries':
           await vscode.commands.executeCommand('ptal.reviewSummaries');
           break;
+        case 'switch':
+          await vscode.commands.executeCommand('ptal.switchPr');
+          break;
         case 'open':
           if (statusBase?.url) {
             void vscode.env.openExternal(vscode.Uri.parse(statusBase.url));
@@ -219,6 +237,26 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('ptal.reviewSummaries', () =>
       vscode.commands.executeCommand('markdown.showPreview', summaryUri),
     ),
+    vscode.commands.registerCommand('ptal.switchPr', async () => {
+      if (lastCandidates.length < 2 || !lastBranch) {
+        void vscode.window.showInformationMessage('PTAL: this branch has only one open PR.');
+        return;
+      }
+      const current = statusBase?.label;
+      const pick = await vscode.window.showQuickPick(
+        lastCandidates.map((c) => ({
+          label: `$(git-pull-request) ${c.label}${c.label === current ? ' — current' : ''}`,
+          description: c.title,
+          key: c.key,
+        })),
+        { placeHolder: 'Show review comments from which PR?' },
+      );
+      if (pick) {
+        // remembered per branch; a closed PR's choice falls back to the oldest on refresh
+        await context.workspaceState.update('ptal.prChoice', { ...prChoices(), [lastBranch]: pick.key });
+        await refresh();
+      }
+    }),
     // full review-time context without the browser: review-time version ↔ working tree
     vscode.commands.registerCommand(
       'ptal.openReviewDiff',
