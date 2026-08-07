@@ -19,6 +19,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- PR picker for branches with multiple open PRs (e.g. backports): choose which PR to show from the warning's "Choose PR…" button, the status-bar menu, or `PTAL: Switch Pull Request`; the choice is remembered per branch
 - Fork-based PRs work: when your `origin` is a fork and the PR lives upstream, PTAL finds it through the `upstream` remote (matching your fork's branch, not same-named branches from other forks)
 - "Open review-time diff" link on degraded threads — when a comment's position is approximate or lost, one click diffs the review-time file version against your working tree, no browser needed
 - PR-level review summaries (the body sent with Approve / Request Changes — where AI reviewers like Codex put their main findings) readable in a markdown preview, via the status-bar menu or `PTAL: Show Review Summaries`

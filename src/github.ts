@@ -47,8 +47,12 @@ export interface ReviewSet {
   title: string;
   url: string;
   headSha: string;
-  /** Open PRs sharing this head branch (different bases); we show the oldest. */
+  /** Open PRs sharing this head branch (different bases); we show the oldest unless the user chose one. */
   openPrCount: number;
+  /** Branch these reviews were resolved for — keys per-branch UI state like the PR choice. */
+  branch: string;
+  /** All open PRs on this branch (the displayed one included); more than one enables the picker. */
+  candidates: { key: number; label: string; title: string }[];
   threads: ReviewThread[];
   /** Chronological review-level summaries; empty-body comment shells are filtered out. */
   summaries: ReviewSummary[];
@@ -286,32 +290,39 @@ function toThread(node: any): ReviewThread {
 }
 
 /** Fetch the open PR for the current branch and all its review threads. Null when no PR. */
-export async function fetchReviewSet(cwd: string): Promise<ReviewSet | null> {
+export async function fetchReviewSet(
+  cwd: string,
+  preferByBranch?: Record<string, number>,
+): Promise<ReviewSet | null> {
   const { origin, upstream, branch } = await detectRepo(cwd);
   const accessToken = await token();
+  const prefer = preferByBranch?.[branch];
 
   // where the PR lives: origin first; the fork workflow falls back to upstream,
   // filtered to PRs whose head actually lives in our fork — branch names alone
   // collide across forks. The fallback costs one extra query and is the only
   // exception to refresh = one query.
-  const findPr = async (owner: string, repo: string, first: number, headOwner: string | null) => {
-    const data = await gql(accessToken, THREADS_QUERY, { owner, repo, branch, first });
+  const findPrs = async (owner: string, repo: string, headOwner: string | null) => {
+    // ponytail: 10 candidates per branch — more same-branch PRs than that is off the map
+    const data = await gql(accessToken, THREADS_QUERY, { owner, repo, branch, first: 10 });
     const conn = data.repository?.pullRequests;
     let nodes: any[] = conn?.nodes ?? [];
     if (headOwner) {
       nodes = nodes.filter((n) => n.headRepositoryOwner?.login === headOwner);
     }
-    return { pr: nodes[0] ?? null, count: headOwner ? nodes.length : (conn?.totalCount ?? 0) };
+    return { nodes, count: headOwner ? nodes.length : (conn?.totalCount ?? 0) };
   };
 
   let prOwner = origin.owner;
   let prRepo = origin.repo;
-  let { pr, count: openPrCount } = await findPr(origin.owner, origin.repo, 1, null);
-  if (!pr && upstream && (upstream.owner !== origin.owner || upstream.repo !== origin.repo)) {
+  let { nodes, count: openPrCount } = await findPrs(origin.owner, origin.repo, null);
+  if (nodes.length === 0 && upstream && (upstream.owner !== origin.owner || upstream.repo !== origin.repo)) {
     prOwner = upstream.owner;
     prRepo = upstream.repo;
-    ({ pr, count: openPrCount } = await findPr(upstream.owner, upstream.repo, 10, origin.owner));
+    ({ nodes, count: openPrCount } = await findPrs(upstream.owner, upstream.repo, origin.owner));
   }
+  // user's pick if it's still open, else the oldest — a stale choice heals itself
+  const pr = nodes.find((n) => n.number === prefer) ?? nodes[0] ?? null;
   if (!pr) {
     return null;
   }
@@ -384,6 +395,8 @@ export async function fetchReviewSet(cwd: string): Promise<ReviewSet | null> {
     url: pr.url,
     headSha,
     openPrCount,
+    branch,
+    candidates: nodes.map((n) => ({ key: n.number, label: `PR #${n.number}`, title: n.title })),
     threads,
     summaries,
   };
