@@ -66,6 +66,29 @@
         "icon": "$(debug-restart)"
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "ptal",
+          "title": "PTAL",
+          "icon": "media/view-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "ptal": [
+        {
+          "id": "ptalThreads",
+          "name": "Review Comments"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "ptalThreads",
+        "contents": "No open PR for the current branch.\n[Refresh](command:ptal.refresh)"
+      }
+    ],
     "menus": {
       "commandPalette": [
         { "command": "ptal.reply", "when": "false" },
